@@ -41,6 +41,8 @@ not finished, or Google Play treats it as consumed (see `core/purchase.lua`).
 | `core.ads` | The shared ad rules and the AdMob link: at most one App open ad and one interstitial a day, never banners, nothing after "Remove ads". An app can switch either ad off. |
 | `core.purchase` | The one-time "Remove ads" purchase through Google Play Billing |
 | `core/reader_ui/` | The reader screen: contents, a part's sections, and the text. Drag to scroll; footnotes as superscripts, tap a paragraph to read its notes; the Android back key goes up a level. Long sections are cut at sentence ends and only what is on screen is drawn. Add `/core/reader_ui/reader.collection` to a collection to use it. |
+| `core.ui.page` | The first piece of the UI kit: a scrolling page of text blocks, buttons and bands inside a gui_script, with drag, tap and culling. Each app brings its own colours and art. |
+| `core.ui.text_input` | A text field's contents and editing, for notes the player writes (an own reading of a riddle, a reflection after practice): typed text, words the keyboard is still composing, backspace and Enter, lengths in characters. Open the phone's keyboard with `gui.show_keyboard`. |
 | `core/fonts/` | Gentium Plus (SIL Open Font License, see `GentiumPlus-OFL.txt`), as `body.font` and `title.font`, with the accented letters the translations use |
 
 Without the AdMob and IAP extensions (desktop builds, tests), the ad and
@@ -60,7 +62,19 @@ accent = #8B2E16
 muted = #7A6A58
 ```
 
-Or send it a message: `msg.post("reader:/reader#gui", "open", { part = 3, section = 281 })`.
+### Inside a game
+
+Add `reader.collection` to the game's collection (as a collection instance
+with the id `reader`), set `start_hidden = 1` under `[reader]`, and open it
+with a message:
+
+```lua
+msg.post("/reader/reader#gui", "open", { part = 3, section = 311 })  -- or no part: the contents
+```
+
+The sender becomes the owner: the contents get a "‹ Back" link, and going
+back from the contents (or the Android back key there) hides the reader and
+sends `reader_closed` to the owner, which shows its own screen again.
 
 ## Tests
 
@@ -70,7 +84,7 @@ The tests run inside the real Defold engine. With Defold's `bob.jar`
 ```sh
 java -jar bob.jar --root . --variant debug resolve build
 cd build/default && dmengine --config=core.selftest=1 ./game.projectc
-# -> core tests: 56 passed, 0 failed   (exit code = number of failures)
+# -> core tests: 73 passed, 0 failed   (exit code = number of failures)
 ```
 
 `tools/rng_reference.py` is the reference for the random generator; the
@@ -82,9 +96,12 @@ In this order, as production continues:
 
 1. The reader screen: done (`core/reader_ui/`). Next: remember the reading
    position, and a larger text size option.
-2. A UI kit: frames, buttons and screens. Each series supplies its own look
+2. A UI kit: started with `core.ui.page` and `core.ui.text_input`. Next:
+   frames and screen transitions. Each series supplies its own look
    (Mughal miniature, ink and gold, optical line art).
 3. Fonts: done (Gentium Plus). Each series may add a display font of its own.
+   Letters outside the font (emoji, Devanagari) typed into a text field are
+   kept and shared, but not drawn.
 4. Sound generated in code: bells, tones, wind.
 5. Google Play Games leaderboards (for the Games of Dharma series only).
 

@@ -11,6 +11,8 @@ local ads = require "core.ads"
 local purchase = require "core.purchase"
 local reader = require "core.reader"
 local text = require "core.reader_ui.text"
+local text_input = require "core.ui.text_input"
+local page = require "core.ui.page"
 
 local M = {}
 
@@ -159,6 +161,50 @@ local function test_reader_text()
 	check("color", math.abs(c.x - 1) < 1e-6 and math.abs(c.y - 128 / 255) < 1e-6 and c.z == 0 and c.w == 1)
 end
 
+local function test_text_input()
+	check("page module loads", type(page.new) == "function")
+	check("utf8 length", text_input.length("aé€😀") == 4, text_input.length("aé€😀"))
+	check("utf8 first", text_input.first("aé€😀", 3) == "aé€" and text_input.first("ab", 5) == "ab")
+	local f = text_input.new({ max = 5 })
+	text_input.insert(f, "héllo world")
+	check("insert cuts at max", f.text == "héllo", f.text)
+	check("full field refuses", text_input.insert(f, "x") == false and text_input.remaining(f) == 0)
+	text_input.backspace(f)
+	text_input.backspace(f)
+	text_input.backspace(f)
+	text_input.backspace(f)
+	check("backspace removes whole characters", f.text == "h", f.text)
+	text_input.backspace(f)
+	check("backspace on empty", text_input.backspace(f) == false and f.text == "")
+
+	local g = text_input.new({ text = "  Line\r\ntwo\t " })
+	check("cleans control characters", g.text == "  Line\ntwo ", g.text)
+	check("value trims", text_input.value(g) == "Line\ntwo", text_input.value(g))
+	local one = text_input.new({ multiline = false, text = "a\nb" })
+	check("one-line field", one.text == "a b", one.text)
+
+	local TEXT, MARKED = hash("text"), hash("marked_text")
+	local h = text_input.new({ max = 100 })
+	text_input.on_input(h, TEXT, { text = "The mind" })
+	text_input.on_input(h, MARKED, { text = " is flee" })
+	check("composing shown, not kept", text_input.display(h, true) == "The mind is flee|" and h.text == "The mind")
+	text_input.on_input(h, TEXT, { text = " is fleeter" })
+	check("composed word committed", h.text == "The mind is fleeter" and h.marked == "", h.text)
+	text_input.on_input(h, hash("key_backspace"), { pressed = true })
+	check("backspace action", h.text == "The mind is fleete", h.text)
+	text_input.on_input(h, hash("key_enter"), { pressed = true })
+	check("enter adds a line", h.text:sub(-1) == "\n")
+	local n = #h.text
+	text_input.on_input(h, TEXT, { text = "\n" })
+	check("enter as key then text: one line break", #h.text == n, #h.text - n)
+	text_input.on_input(h, TEXT, { text = "x" })
+	text_input.on_input(h, TEXT, { text = "\n" })
+	text_input.on_input(h, hash("key_enter"), { pressed = true })
+	check("enter as text then key: one line break", h.text:sub(-2) == "x\n", h.text:sub(-3))
+	local _, done = text_input.on_input(one, hash("key_enter"), { pressed = true })
+	check("enter finishes a one-line field", done == true)
+end
+
 function M.run()
 	failures, passed = 0, 0
 	test_rng()
@@ -169,6 +215,7 @@ function M.run()
 	test_save()
 	test_reader()
 	test_reader_text()
+	test_text_input()
 	print(string.format("core tests: %d passed, %d failed", passed, failures))
 	return failures
 end
