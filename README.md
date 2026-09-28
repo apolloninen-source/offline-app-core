@@ -84,8 +84,7 @@ In this order, as production continues:
    position, and a larger text size option.
 2. A UI kit: frames, buttons and screens. Each series supplies its own look
    (Mughal miniature, ink and gold, optical line art).
-3. Fonts: a serif with the translators' diacritics (for example Noto Serif,
-   SIL Open Font License), cut down to the characters used.
+3. Fonts: done (Gentium Plus). Each series may add a display font of its own.
 4. Sound generated in code: bells, tones, wind.
 5. Google Play Games leaderboards (for the Games of Dharma series only).
 
