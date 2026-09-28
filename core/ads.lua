@@ -15,6 +15,7 @@
 --   ads.init(save_data, {
 --       app_open_unit = "...", interstitial_unit = "...",   -- real IDs at release
 --       interstitial = true,                               -- false in calm apps
+--       max_rating = "PG",                                 -- G, PG (default), T or MA
 --   })
 --   ads.on_game_start()   -- when a game (not the menu) begins
 
@@ -86,6 +87,12 @@ function M.init(save_data, options)
 	if opts.interstitial == nil then opts.interstitial = true end
 	if not admob or M.removed() then
 		return false
+	end
+	-- The strictest rating the audience needs: the apps are for 13+ and
+	-- about scripture, so PG unless an app says otherwise.
+	local rating = admob["MAX_AD_CONTENT_RATING_" .. (opts.max_rating or "PG")]
+	if rating and admob.set_max_ad_content_rating then
+		admob.set_max_ad_content_rating(rating)
 	end
 	-- TODO before release: EU consent (a certified consent tool) must run
 	-- before this point for ads to show in the EEA/UK. The AdMob extension

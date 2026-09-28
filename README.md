@@ -13,13 +13,23 @@ extensions it talks to:
 ```ini
 [project]
 dependencies#0 = https://github.com/apolloninen-source/offline-app-core/archive/<commit>.zip
-dependencies#1 = https://github.com/defold/extension-admob/archive/master.zip
-dependencies#2 = https://github.com/defold/extension-iap/archive/master.zip
-dependencies#3 = https://github.com/britzl/defold-sharing/archive/master.zip   # for "Export notes"
+dependencies#1 = https://github.com/defold/extension-admob/archive/refs/tags/4.2.2.zip
+dependencies#2 = https://github.com/defold/extension-iap/archive/refs/tags/8.4.1.zip
+dependencies#3 = https://github.com/britzl/defold-sharing/archive/refs/tags/4.7.0.zip   # for "Export notes"
+
+[admob]
+app_id_android = ca-app-pub-3940256099942544~3347511713   # Google's test app ID; the app's own at release
+test_ads_in_debug = 1
 
 [iap]
 auto_finish_transactions = 0
 ```
+
+AdMob 4.2.2 is the newest release that works with Defold 1.13 (4.3.0 needs
+1.14, not yet released). These are native extensions: bundling needs
+Defold's build server, which bob.jar and the editor use by default.
+Measured with all three (Yaksha's Riddles, release): a 26 MB APK for arm64
+and armv7, an 18 MB Play bundle; players download only their phone's part.
 
 Pin the core to an exact commit (or a release tag, once tags exist), never
 a branch, so an app always builds the same. GitHub serves a zip for any
@@ -39,7 +49,7 @@ not finished, or Google Play treats it as consumed (see `core/purchase.lua`).
 | `core.save` | The player's saved state, on the phone only, with defaults filled in for new fields |
 | `core.streak` | Daily streaks: current, best, days played |
 | `core.share` | Result text and a WhatsApp link (`wa.me`), with no extension needed |
-| `core.ads` | The shared ad rules and the AdMob link: at most one App open ad and one interstitial a day, never banners, nothing after "Remove ads". An app can switch either ad off. |
+| `core.ads` | The shared ad rules and the AdMob link: at most one App open ad and one interstitial a day, never banners, nothing after "Remove ads", ad content rated PG at most. An app can switch either ad off. |
 | `core.purchase` | The one-time "Remove ads" purchase through Google Play Billing |
 | `core/reader_ui/` | The reader screen: contents, a part's sections (with a jump list of its sub-parts), and the text. Drag to scroll; footnotes as superscripts, tap a paragraph to read its notes; the Android back key goes up a level and returns to the place in the list. It remembers where the player stopped ("Continue" on the contents) and keeps **bookmarks with notes**, which can be exported as a .txt file. Long sections are cut at sentence ends and only what is on screen is drawn. Add `/core/reader_ui/reader.collection` to a collection to use it. |
 | `core.bookmarks` | The reading position and bookmarks with notes, as pure functions on the reader's save |

@@ -22,8 +22,16 @@ local function grant()
 end
 
 local function listener(self, transaction, error)
-	if error or transaction.ident ~= product_id then
-		return -- cancelled, failed, or another product: nothing changes
+	if error then
+		-- Bought before (another phone, a reinstall): ask the store again,
+		-- which answers with a restored purchase.
+		if error.reason == iap.REASON_ITEM_ALREADY_OWNED then
+			iap.restore()
+		end
+		return -- otherwise cancelled or failed: nothing changes
+	end
+	if transaction.ident ~= product_id then
+		return
 	end
 	if transaction.state == iap.TRANS_STATE_PURCHASED then
 		grant()
