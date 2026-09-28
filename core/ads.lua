@@ -104,6 +104,12 @@ function M.init(save_data, options)
 	if rating and admob.set_max_ad_content_rating then
 		admob.set_max_ad_content_rating(rating)
 	end
+	-- Never personalized: no ad profile follows the player. Google's
+	-- "restricted data processing" makes it serve non-personalized ads and
+	-- limit its use of identifiers. The owner's rule; see README.
+	if admob.set_privacy_settings then
+		admob.set_privacy_settings(true)
+	end
 	local function start()
 		if not started then
 			started = true

@@ -123,6 +123,14 @@ In this order, as production continues:
 4. Sound generated in code: bells, tones, wind.
 5. Google Play Games leaderboards (for the Games of Dharma series only).
 
+## Ads are never personalized
+
+A rule for every app: no ad profile follows the player, and player data is
+never traded. `core.ads` turns on Google's restricted data processing
+before AdMob starts, so Google serves non-personalized ads. No other ad
+networks or analytics are ever added. Still to do: remove the advertising
+ID permission from each app's Android manifest.
+
 ## EU consent
 
 For ads in the EEA, the UK and Switzerland, Google requires a certified
