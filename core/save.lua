@@ -34,9 +34,11 @@ local function fill(target, defaults)
 	return target
 end
 
---- Opens (or creates) the save for an app. app_id names the save folder.
-function M.open(app_id, defaults)
-	local path = sys.get_save_file(app_id, "save")
+--- Opens (or creates) the save for an app. app_id names the save folder;
+--- name the file in it (default "save"), so a library part such as the
+--- reader can keep its own file next to the app's.
+function M.open(app_id, defaults, name)
+	local path = sys.get_save_file(app_id, name or "save")
 	local values = sys.load(path) or {}
 	fill(values, defaults or {})
 	values.version = values.version or VERSION

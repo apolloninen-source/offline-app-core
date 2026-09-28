@@ -13,6 +13,9 @@ local reader = require "core.reader"
 local text = require "core.reader_ui.text"
 local text_input = require "core.ui.text_input"
 local page = require "core.ui.page"
+local note_editor = require "core.ui.note_editor"
+local bookmarks = require "core.bookmarks"
+local notes_export = require "core.notes_export"
 
 local M = {}
 
@@ -205,6 +208,54 @@ local function test_text_input()
 	check("enter finishes a one-line field", done == true)
 end
 
+local function test_bookmarks()
+	check("note editor module loads", type(note_editor.open) == "function")
+	local st = { marks = {} }
+	bookmarks.set_last(st, 3, 311, 4)
+	check("last place", st.last.part == 3 and st.last.section == 311 and st.last.chunk == 4)
+	bookmarks.add(st, { part = 5, section = 2, chunk = 1, note = "b" })
+	bookmarks.add(st, { part = 3, section = 311, chunk = 7, note = "a" })
+	bookmarks.add(st, { part = 3, section = 311, chunk = 2, note = "" })
+	check("marks in book order", st.marks[1].chunk == 2 and st.marks[2].chunk == 7 and st.marks[3].part == 5)
+	bookmarks.add(st, { part = 3, section = 311, chunk = 7, note = "changed" })
+	check("same place updates the note", #st.marks == 3 and st.marks[2].note == "changed")
+	local here = bookmarks.in_section(st, 3, 311)
+	check("marks in a section", here[2] ~= nil and here[7] ~= nil and here[1] == nil)
+	check("find", bookmarks.find(st, 5, 2, 1) == 3 and bookmarks.find(st, 5, 2, 9) == nil)
+	bookmarks.remove(st, 1)
+	check("remove", #st.marks == 2 and st.marks[1].chunk == 7)
+	check("excerpt drops opening quotes", bookmarks.excerpt("“‘Never do, O Karna", 90) == "Never do, O Karna")
+	check("short excerpt whole", bookmarks.excerpt("Day after day.", 90) == "Day after day.")
+	local ex = bookmarks.excerpt("Day after day countless creatures are going to the abode of Yama, yet those", 40)
+	check("excerpt cut at a word", ex == "Day after day countless creatures are…", ex)
+end
+
+local function test_notes_export()
+	check("export date", notes_export.date({ year = 2026, month = 9, day = 8 }) == "2026-09-08")
+	local st = { marks = {} }
+	bookmarks.add(st, { part = 3, section = 311, chunk = 2, place = "Vana Parva · Section CCCXI",
+		excerpt = "Day after day", note = "Read again" })
+	bookmarks.add(st, { part = 1, section = 1, chunk = 1, excerpt = "", note = "" })
+	local entries = bookmarks.export_entries(st)
+	check("bookmark entries", #entries == 2 and entries[1][1] == "Part 1, section 1" and #entries[1] == 1
+		and entries[2][3] == "Note: Read again", entries[1][1])
+	local txt = notes_export.text("My notes", {
+		{ heading = "Readings", entries = { { "Q", "A" } } },
+		{ heading = "Empty", entries = {} },
+		{ heading = "Bookmarks", entries = entries },
+	}, "2026-09-28")
+	check("export text", txt:find("My notes\nExported 2026-09-28", 1, true) ~= nil
+		and txt:find("READINGS\n\nQ\nA\n", 1, true) ~= nil and txt:find("EMPTY", 1, true) == nil
+		and txt:find("BOOKMARKS", 1, true) ~= nil)
+	local path = notes_export.write("offline-app-core-test", "notes-test.txt", txt)
+	local f = path and io.open(path, "rb")
+	local back = f and f:read("*a")
+	if f then f:close() end
+	check("export file written", back == txt, path)
+	local _, shared = notes_export.export("offline-app-core-test", "notes-test.txt", txt)
+	check("no sharing extension on desktop", shared == false)
+end
+
 function M.run()
 	failures, passed = 0, 0
 	test_rng()
@@ -216,6 +267,8 @@ function M.run()
 	test_reader()
 	test_reader_text()
 	test_text_input()
+	test_bookmarks()
+	test_notes_export()
 	print(string.format("core tests: %d passed, %d failed", passed, failures))
 	return failures
 end

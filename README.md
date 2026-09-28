@@ -15,6 +15,7 @@ extensions it talks to:
 dependencies#0 = https://github.com/apolloninen-source/offline-app-core/archive/<commit>.zip
 dependencies#1 = https://github.com/defold/extension-admob/archive/master.zip
 dependencies#2 = https://github.com/defold/extension-iap/archive/master.zip
+dependencies#3 = https://github.com/britzl/defold-sharing/archive/master.zip   # for "Export notes"
 
 [iap]
 auto_finish_transactions = 0
@@ -40,8 +41,11 @@ not finished, or Google Play treats it as consumed (see `core/purchase.lua`).
 | `core.share` | Result text and a WhatsApp link (`wa.me`), with no extension needed |
 | `core.ads` | The shared ad rules and the AdMob link: at most one App open ad and one interstitial a day, never banners, nothing after "Remove ads". An app can switch either ad off. |
 | `core.purchase` | The one-time "Remove ads" purchase through Google Play Billing |
-| `core/reader_ui/` | The reader screen: contents, a part's sections, and the text. Drag to scroll; footnotes as superscripts, tap a paragraph to read its notes; the Android back key goes up a level. Long sections are cut at sentence ends and only what is on screen is drawn. Add `/core/reader_ui/reader.collection` to a collection to use it. |
+| `core/reader_ui/` | The reader screen: contents, a part's sections (with a jump list of its sub-parts), and the text. Drag to scroll; footnotes as superscripts, tap a paragraph to read its notes; the Android back key goes up a level and returns to the place in the list. It remembers where the player stopped ("Continue" on the contents) and keeps **bookmarks with notes**, which can be exported as a .txt file. Long sections are cut at sentence ends and only what is on screen is drawn. Add `/core/reader_ui/reader.collection` to a collection to use it. |
+| `core.bookmarks` | The reading position and bookmarks with notes, as pure functions on the reader's save |
+| `core.notes_export` | "Export notes": the player's notes as one .txt file, written in the app's folder and handed to the phone's share sheet (Files, Drive, email) through the Sharing extension, since Android apps cannot write into Downloads directly |
 | `core.ui.page` | The first piece of the UI kit: a scrolling page of text blocks, buttons and bands inside a gui_script, with drag, tap and culling. Each app brings its own colours and art. |
+| `core.ui.note_editor` | A full-screen editor for a short note (a riddle reading, a bookmark's note), above where the keyboard opens, with Done and Cancel |
 | `core.ui.text_input` | A text field's contents and editing, for notes the player writes (an own reading of a riddle, a reflection after practice): typed text, words the keyboard is still composing, backspace and Enter, lengths in characters. Open the phone's keyboard with `gui.show_keyboard`. |
 | `core/fonts/` | Gentium Plus (SIL Open Font License, see `GentiumPlus-OFL.txt`), as `body.font` and `title.font`, with the accented letters the translations use |
 
@@ -60,6 +64,9 @@ background = #F3E9D2              # optional colours, hex
 ink = #2B1D12
 accent = #8B2E16
 muted = #7A6A58
+field = #E7D9BA                   # optional: the note editor's box
+save_id = yaksha                  # the app's save folder, for the position and bookmarks
+start_hidden = 1                  # inside a game: open it with a message (below)
 ```
 
 ### Inside a game
@@ -84,7 +91,7 @@ The tests run inside the real Defold engine. With Defold's `bob.jar`
 ```sh
 java -jar bob.jar --root . --variant debug resolve build
 cd build/default && dmengine --config=core.selftest=1 ./game.projectc
-# -> core tests: 73 passed, 0 failed   (exit code = number of failures)
+# -> core tests: 88 passed, 0 failed   (exit code = number of failures)
 ```
 
 `tools/rng_reference.py` is the reference for the random generator; the
@@ -94,8 +101,8 @@ tests compare against its values.
 
 In this order, as production continues:
 
-1. The reader screen: done (`core/reader_ui/`). Next: remember the reading
-   position, and a larger text size option.
+1. The reader screen: done (`core/reader_ui/`), with the reading position,
+   bookmarks with notes and export. Next: a larger text size option.
 2. A UI kit: started with `core.ui.page` and `core.ui.text_input`. Next:
    frames and screen transitions. Each series supplies its own look
    (Mughal miniature, ink and gold, optical line art).
