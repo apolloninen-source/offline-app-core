@@ -1,0 +1,20 @@
+[project]
+title = offline-app-core
+version = 0.1.0
+custom_resources = /core/test/fixture
+
+[library]
+include_dirs = core
+
+[bootstrap]
+main_collection = /core/test/test.collectionc
+
+[input]
+game_binding = /builtins/input/all.input_bindingc
+
+[display]
+width = 720
+height = 1280
+
+[core]
+selftest = 0
