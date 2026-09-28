@@ -1,0 +1,12 @@
+script: "/core/reader_ui/reader.gui_script"
+fonts {
+  name: "body"
+  font: "/core/fonts/body.font"
+}
+fonts {
+  name: "title"
+  font: "/core/fonts/title.font"
+}
+material: "/builtins/materials/gui.material"
+adjust_reference: ADJUST_REFERENCE_PARENT
+max_nodes: 2048

@@ -1,0 +1,372 @@
+-- The reader screen: contents -> a part's sections -> the text of a section.
+--
+-- Settings, in the app's game.project:
+--   [reader]
+--   book_dir = /shared/reader/data/      where the book's JSON lives
+--   open = 3,281                         optional: open a part (and section) at start
+--   background = #F3E9D2                 optional colours (hex)
+--   ink = #2B1D12
+--   accent = #8B2E16
+--   muted = #7A6A58
+--
+-- Drag to scroll, tap to open. In the text, footnote numbers are shown as
+-- superscripts; tapping a paragraph that has notes shows them. The Android
+-- back key (or the ‹ link in the header) goes back up a level.
+--
+-- Long sections are cut into chunks at sentence ends, and only the chunks on
+-- screen are drawn, so even the longest sections stay light on cheap phones.
+
+local reader = require "core.reader"
+local text = require "core.reader_ui.text"
+
+local TOUCH = hash("mouse_button_left")
+local BACK = hash("key_back")
+local WHEEL_UP = hash("mouse_wheel_up")
+local WHEEL_DOWN = hash("mouse_wheel_down")
+
+local MARGIN = 44
+local HEADER_H = 170
+local GAP = 22
+local TAP_SLOP = 14
+
+local function config_color(key, default)
+	return text.color(sys.get_config_string("reader." .. key, default))
+end
+
+-- Layout ---------------------------------------------------------------------
+
+-- Text size, measured with the font resource (Defold 1.13 has no
+-- gui.get_text_metrics_from_node).
+local function measure(self, font, str, width, leading, line_break)
+	self.font_res[font] = self.font_res[font] or gui.get_font_resource(font)
+	return resource.get_text_metrics(self.font_res[font], str,
+		{ width = width, leading = leading or 1, line_break = line_break ~= false })
+end
+
+local function new_text(self, str, font, color, width, scale)
+	local node = gui.new_text_node(vmath.vector3(0, 0, 0), str)
+	gui.set_font(node, font)
+	gui.set_pivot(node, gui.PIVOT_NW)
+	gui.set_line_break(node, true)
+	gui.set_size(node, vmath.vector3(width / (scale or 1), 0, 0))
+	gui.set_color(node, color)
+	gui.set_leading(node, 1.15)
+	if scale then
+		gui.set_scale(node, vmath.vector3(scale, scale, 1))
+	end
+	gui.set_parent(node, self.content)
+	local metrics = measure(self, font, str, width / (scale or 1), 1.15)
+	return node, metrics.height * (scale or 1)
+end
+
+-- Adds an item below the previous ones. on_tap is optional.
+local function add(self, str, opts)
+	opts = opts or {}
+	local width = self.width - 2 * MARGIN - (opts.indent or 0)
+	local node, h = new_text(self, str, opts.font or "body", opts.color or self.colors.ink, width, opts.scale)
+	local top = -self.cursor - (opts.space_before or 0)
+	gui.set_position(node, vmath.vector3(MARGIN + (opts.indent or 0), top, 0))
+	local item = { node = node, top = top, height = h, on_tap = opts.on_tap }
+	self.items[#self.items + 1] = item
+	self.cursor = -top + h + (opts.space_after or GAP)
+	return item
+end
+
+local function viewport_h(self)
+	return self.height - HEADER_H
+end
+
+local function max_scroll(self)
+	return math.max(0, self.cursor + 60 - viewport_h(self))
+end
+
+-- Shows only the items that are on screen (or nearly).
+local function cull(self)
+	local view = viewport_h(self)
+	for _, item in ipairs(self.items) do
+		local top = item.top + self.scroll -- 0 = top of viewport, negative = below
+		local visible = top > -view - 400 and top - item.height < 400
+		if visible ~= item.enabled then
+			gui.set_enabled(item.node, visible)
+			item.enabled = visible
+		end
+	end
+end
+
+local function set_scroll(self, value)
+	self.scroll = math.max(0, math.min(max_scroll(self), value))
+	gui.set_position(self.content, vmath.vector3(0, self.height - HEADER_H + self.scroll, 0))
+	cull(self)
+end
+
+local function clear(self)
+	if self.content then
+		gui.delete_node(self.content)
+	end
+	self.content = gui.new_box_node(vmath.vector3(0, 0, 0), vmath.vector3(0, 0, 0))
+	gui.move_below(self.content, self.header_bg)
+	self.items = {}
+	self.cursor = 24
+	self.scroll = 0
+	set_scroll(self, 0)
+end
+
+local function set_header(self, back_label, title)
+	gui.set_text(self.back, back_label and ("‹ " .. back_label) or "")
+	gui.set_text(self.title, title)
+	-- Long titles shrink to fit on one line.
+	gui.set_scale(self.title, vmath.vector3(1, 1, 1))
+	local w = measure(self, "title", title, 0, 1, false).width
+	local room = self.width - 2 * MARGIN
+	if w > room then
+		local s = room / w
+		gui.set_scale(self.title, vmath.vector3(s, s, 1))
+	end
+	self.back_enabled = back_label ~= nil
+end
+
+-- Views ----------------------------------------------------------------------
+
+local show_contents, show_part, show_section
+
+local function close_notes(self)
+	if self.notes_panel then
+		gui.delete_node(self.notes_panel)
+		self.notes_panel = nil
+	end
+end
+
+local function show_notes(self, section, nums)
+	close_notes(self)
+	local panel = gui.new_box_node(vmath.vector3(self.width / 2, self.height / 2, 0),
+		vmath.vector3(self.width, self.height, 0))
+	gui.set_color(panel, vmath.vector4(0, 0, 0, 0.55))
+	gui.set_inherit_alpha(panel, false)
+	local body = {}
+	for _, num in ipairs(nums) do
+		body[#body + 1] = text.superscript(num) .. " " .. (section.notes[num] or "")
+	end
+	local width = self.width - 2 * MARGIN - 40
+	local node = gui.new_text_node(vmath.vector3(0, 0, 0), table.concat(body, "\n\n"))
+	gui.set_font(node, "body")
+	gui.set_line_break(node, true)
+	gui.set_size(node, vmath.vector3(width, 0, 0))
+	gui.set_leading(node, 1.15)
+	gui.set_color(node, self.colors.ink)
+	gui.set_inherit_alpha(node, false)
+	local h = measure(self, "body", table.concat(body, "\n\n"), width, 1.15).height
+	local card = gui.new_box_node(vmath.vector3(0, 0, 0), vmath.vector3(width + 60, h + 60, 0))
+	gui.set_color(card, self.colors.background)
+	gui.set_inherit_alpha(card, false)
+	gui.set_parent(card, panel)
+	gui.set_pivot(node, gui.PIVOT_NW)
+	gui.set_position(node, vmath.vector3(-width / 2, h / 2, 0))
+	gui.set_parent(node, card)
+	self.notes_panel = panel
+end
+
+show_section = function(self, part_n, section_n)
+	close_notes(self)
+	local part = self.book:part(part_n)
+	local section = part.sections[section_n]
+	self.view, self.part_n, self.section_n = "section", part_n, section_n
+	clear(self)
+	set_header(self, part.name, "Section " .. section.label)
+	if section.sub then
+		add(self, section.sub, { color = self.colors.muted, space_after = GAP + 6 })
+	end
+	for _, para in ipairs(section.paras) do
+		local pieces = text.chunks(para, 700)
+		for i, piece in ipairs(pieces) do
+			local shown, notes = text.render(piece)
+			local last = i == #pieces
+			add(self, shown, {
+				space_after = last and GAP + 8 or 6,
+				on_tap = #notes > 0 and function() show_notes(self, section, notes) end or nil,
+			})
+		end
+	end
+	if section_n < #part.sections then
+		add(self, "Next section ›", { color = self.colors.accent, space_before = 20,
+			on_tap = function() show_section(self, part_n, section_n + 1) end })
+	elseif part_n < #self.book:index().parts then
+		local next_part = self.book:index().parts[part_n + 1]
+		add(self, next_part.name .. " ›", { color = self.colors.accent, space_before = 20,
+			on_tap = function() show_section(self, part_n + 1, 1) end })
+	end
+	set_scroll(self, 0)
+end
+
+show_part = function(self, part_n)
+	close_notes(self)
+	local part = self.book:part(part_n)
+	self.view, self.part_n = "part", part_n
+	clear(self)
+	set_header(self, "Contents", part.name)
+	local current_sub
+	for i, section in ipairs(part.sections) do
+		if section.sub and section.sub ~= current_sub then
+			current_sub = section.sub
+			add(self, section.sub, { color = self.colors.muted, space_before = i > 1 and 16 or 0, space_after = 12 })
+		end
+		add(self, "Section " .. section.label, { indent = 24, space_after = 16,
+			on_tap = function() show_section(self, part_n, i) end })
+	end
+	set_scroll(self, 0)
+end
+
+show_contents = function(self)
+	close_notes(self)
+	local index = self.book:index()
+	self.view = "contents"
+	clear(self)
+	set_header(self, nil, index.title or "")
+	if index.translator then
+		add(self, index.translator, { color = self.colors.muted, space_after = GAP + 10 })
+	end
+	for n, entry in ipairs(index.parts) do
+		local open_part = function() show_part(self, n) end
+		add(self, string.format("%d   %s", entry.number or n, entry.name), {
+			space_after = 4, on_tap = open_part,
+		})
+		add(self, string.format("%d sections", entry.sections), { color = self.colors.muted,
+			indent = 44, scale = 0.8, space_after = GAP, on_tap = open_part })
+	end
+	set_scroll(self, 0)
+end
+
+local function go_back(self)
+	if self.notes_panel then
+		close_notes(self)
+	elseif self.view == "section" then
+		show_part(self, self.part_n)
+	elseif self.view == "part" then
+		show_contents(self)
+	else
+		return false
+	end
+	return true
+end
+
+-- Lifecycle ------------------------------------------------------------------
+
+function init(self)
+	msg.post(".", "acquire_input_focus")
+	self.font_res = {}
+	self.width = tonumber(sys.get_config_string("display.width", "720"))
+	self.height = tonumber(sys.get_config_string("display.height", "1280"))
+	self.colors = {
+		background = config_color("background", "#F3E9D2"),
+		ink = config_color("ink", "#2B1D12"),
+		accent = config_color("accent", "#8B2E16"),
+		muted = config_color("muted", "#7A6A58"),
+	}
+
+	local bg = gui.new_box_node(vmath.vector3(self.width / 2, self.height / 2, 0),
+		vmath.vector3(self.width, self.height, 0))
+	gui.set_color(bg, self.colors.background)
+
+	self.header_bg = gui.new_box_node(vmath.vector3(self.width / 2, self.height - HEADER_H / 2, 0),
+		vmath.vector3(self.width, HEADER_H, 0))
+	gui.set_color(self.header_bg, self.colors.background)
+	local rule = gui.new_box_node(vmath.vector3(self.width / 2, self.height - HEADER_H + 1, 0),
+		vmath.vector3(self.width - 2 * MARGIN, 2, 0))
+	gui.set_color(rule, self.colors.accent)
+
+	self.back = gui.new_text_node(vmath.vector3(MARGIN, self.height - 40, 0), "")
+	gui.set_font(self.back, "body")
+	gui.set_pivot(self.back, gui.PIVOT_NW)
+	gui.set_color(self.back, self.colors.accent)
+	self.title = gui.new_text_node(vmath.vector3(MARGIN, self.height - 88, 0), "")
+	gui.set_font(self.title, "title")
+	gui.set_pivot(self.title, gui.PIVOT_NW)
+	gui.set_color(self.title, self.colors.ink)
+
+	self.book = reader.open(sys.get_config_string("reader.book_dir", "/shared/reader/data/"))
+	show_contents(self)
+
+	-- Optional start position, e.g. "3" or "3,281", for testing and deep links.
+	local open = sys.get_config_string("reader.open", "")
+	local p, s = open:match("^(%d+),?(%d*)$")
+	if p then
+		if s ~= "" then
+			show_section(self, tonumber(p), tonumber(s))
+		else
+			show_part(self, tonumber(p))
+		end
+	end
+end
+
+local function tap(self, x, y)
+	if self.notes_panel then
+		close_notes(self)
+		return
+	end
+	if y > self.height - HEADER_H then
+		if self.back_enabled and y > self.height - 90 and x < self.width / 2 then
+			go_back(self)
+		end
+		return
+	end
+	-- y in content coordinates: 0 at the top of the content, negative below
+	local cy = y - (self.height - HEADER_H) - self.scroll
+	for _, item in ipairs(self.items) do
+		if item.on_tap and cy <= item.top + 8 and cy >= item.top - item.height - 8 then
+			item.on_tap()
+			return
+		end
+	end
+end
+
+function on_input(self, action_id, action)
+	if action_id == TOUCH then
+		-- A quick tap can arrive as pressed and released in the same frame.
+		if action.pressed then
+			self.drag = { last = action.y, moved = 0 }
+		end
+		if action.released then
+			if self.drag and self.drag.moved < TAP_SLOP then
+				tap(self, action.x, action.y)
+			end
+			self.drag = nil
+		elseif not action.pressed and self.drag then
+			local dy = action.y - self.drag.last
+			self.drag.last = action.y
+			self.drag.moved = self.drag.moved + math.abs(dy)
+			if self.drag.moved >= TAP_SLOP and not self.notes_panel then
+				set_scroll(self, self.scroll + dy)
+			end
+		end
+		return true
+	elseif action_id == nil and self.drag then
+		-- pointer moved while pressed (desktop)
+		local dy = action.y - self.drag.last
+		self.drag.last = action.y
+		self.drag.moved = self.drag.moved + math.abs(dy)
+		if self.drag.moved >= TAP_SLOP and not self.notes_panel then
+			set_scroll(self, self.scroll + dy)
+		end
+		return true
+	elseif action_id == WHEEL_UP and action.pressed then
+		set_scroll(self, self.scroll - 90)
+		return true
+	elseif action_id == WHEEL_DOWN and action.pressed then
+		set_scroll(self, self.scroll + 90)
+		return true
+	elseif action_id == BACK and action.released then
+		return go_back(self)
+	end
+end
+
+function on_message(self, message_id, message)
+	if message_id == hash("open") then
+		-- msg.post("reader:/reader#gui", "open", { part = 3, section = 281 })
+		if message.section then
+			show_section(self, message.part, message.section)
+		elseif message.part then
+			show_part(self, message.part)
+		else
+			show_contents(self)
+		end
+	end
+end

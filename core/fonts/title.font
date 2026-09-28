@@ -1,0 +1,5 @@
+font: "/core/fonts/GentiumPlus-Regular.ttf"
+material: "/builtins/fonts/font-df.material"
+size: 44
+output_format: TYPE_DISTANCE_FIELD
+characters: " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÑÒÓÔÕÖØÙÚÛÜÝàáâãäåæçèéêëìíîïñòóôõöøùúûüýÿĀāĒēĪīŌōŪūŚśŞşŠšŒœŖŗȘșǸǹḌḍḤḥḶḷḸḹṀṁṂṃṄṅṆṇṚṛṜṝṢṣṬṭẒẓ‘’“”–—…•·°×§¶†‹›«»←→⁰¹²³⁴⁵⁶⁷⁸⁹"

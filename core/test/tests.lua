@@ -10,6 +10,7 @@ local save = require "core.save"
 local ads = require "core.ads"
 local purchase = require "core.purchase"
 local reader = require "core.reader"
+local text = require "core.reader_ui.text"
 
 local M = {}
 
@@ -136,6 +137,28 @@ local function test_reader()
 	check("selftest", ok and summary == "reader ok: 1 parts, 2 sections, 1 footnotes", summary)
 end
 
+local function test_reader_text()
+	check("superscript", text.superscript("96") == "⁹⁶")
+	local shown, notes = text.render("water[^96] and fire[^97].")
+	check("render", shown == "water⁹⁶ and fire⁹⁷." and #notes == 2 and notes[2] == "97", shown)
+	check("short stays whole", #text.chunks("One sentence.", 700) == 1)
+	local long = string.rep("This is a sentence of some length. ", 60)
+	local pieces = text.chunks(long, 300)
+	local ok = #pieces > 1
+	for _, p in ipairs(pieces) do
+		ok = ok and #p <= 300 and p:sub(-1) == "."
+	end
+	check("chunks end at sentences", ok, #pieces)
+	check("chunks keep all text", table.concat(pieces, " ") == long:gsub("%s+$", ""))
+	local nospace = string.rep("x", 1000)
+	local hard = text.chunks(nospace, 300)
+	check("chunks without spaces", #hard == 4 and table.concat(hard) == nospace, #hard)
+	local marked = text.chunks("First part[^1] here. " .. string.rep("more words ", 80), 200)
+	check("markers stay in their chunk", marked[1]:find("%[%^1%]") ~= nil)
+	local c = text.color("#FF8000")
+	check("color", math.abs(c.x - 1) < 1e-6 and math.abs(c.y - 128 / 255) < 1e-6 and c.z == 0 and c.w == 1)
+end
+
 function M.run()
 	failures, passed = 0, 0
 	test_rng()
@@ -145,6 +168,7 @@ function M.run()
 	test_ads_and_purchase()
 	test_save()
 	test_reader()
+	test_reader_text()
 	print(string.format("core tests: %d passed, %d failed", passed, failures))
 	return failures
 end
