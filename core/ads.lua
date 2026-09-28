@@ -16,7 +16,16 @@
 --       app_open_unit = "...", interstitial_unit = "...",   -- real IDs at release
 --       interstitial = true,                               -- false in calm apps
 --       max_rating = "PG",                                 -- G, PG (default), T or MA
+--       on_consent = function(can_request_ads) end,        -- optional: refresh a "Privacy choices" link
+--       consent_debug = { debug_eea = true, test_device = "..." },  -- testing the form outside the EU
 --   })
+--
+-- EU consent: where the law asks for it (EEA, UK, Switzerland), Google's
+-- consent form (the "consent" extension in this library, /consent) is shown
+-- before any ad is requested, and AdMob starts only once ads are allowed.
+-- The form itself is written in AdMob, under Privacy & messaging. Where
+-- M.privacy_options_required() is true, the app must offer a "Privacy
+-- choices" link that calls M.show_privacy_options().
 --   ads.on_game_start()   -- when a game (not the menu) begins
 
 local M = {}
@@ -27,6 +36,7 @@ M.TEST_APP_OPEN = "ca-app-pub-3940256099942544/9257395921"
 M.TEST_INTERSTITIAL = "ca-app-pub-3940256099942544/1033173712"
 
 local save, opts
+local started = false
 local today_fn = function()
 	return require("core.day").today()
 end
@@ -94,12 +104,50 @@ function M.init(save_data, options)
 	if rating and admob.set_max_ad_content_rating then
 		admob.set_max_ad_content_rating(rating)
 	end
-	-- TODO before release: EU consent (a certified consent tool) must run
-	-- before this point for ads to show in the EEA/UK. The AdMob extension
-	-- does not provide one; see README.
-	admob.set_callback(on_admob)
-	admob.initialize()
+	local function start()
+		if not started then
+			started = true
+			admob.set_callback(on_admob)
+			admob.initialize()
+		end
+	end
+	if consent then
+		consent.request(function(self, can_request_ads, err)
+			if err then
+				print("consent: " .. err)
+			end
+			if can_request_ads then
+				start()
+			end
+			if opts.on_consent then
+				opts.on_consent(can_request_ads)
+			end
+		end, opts.consent_debug)
+		-- answered on an earlier day: no need to wait for the update
+		if consent.can_request_ads() then
+			start()
+		end
+	else
+		start() -- no consent extension (desktop): nothing to ask
+	end
 	return true
+end
+
+--- True where the player must be able to change their consent choice: the
+--- app then shows a "Privacy choices" link.
+function M.privacy_options_required()
+	return consent ~= nil and not M.removed() and consent.privacy_options_required()
+end
+
+--- Opens Google's form for changing the consent choice.
+function M.show_privacy_options()
+	if consent then
+		consent.show_privacy_options(function(self, can_request_ads, err)
+			if err then
+				print("consent: " .. err)
+			end
+		end)
+	end
 end
 
 --- Call when a game (not the menu) starts. Shows the day's interstitial if

@@ -50,6 +50,7 @@ not finished, or Google Play treats it as consumed (see `core/purchase.lua`).
 | `core.streak` | Daily streaks: current, best, days played |
 | `core.share` | Result text and a WhatsApp link (`wa.me`), with no extension needed |
 | `core.ads` | The shared ad rules and the AdMob link: at most one App open ad and one interstitial a day, never banners, nothing after "Remove ads", ad content rated PG at most. An app can switch either ad off. |
+| `/consent` | Native extension: Google's consent form (UMP) for Android, as the Lua module `consent` (see "EU consent") |
 | `core.purchase` | The one-time "Remove ads" purchase through Google Play Billing |
 | `core/reader_ui/` | The reader screen: contents, a part's sections (with a jump list of its sub-parts), and the text. Drag to scroll; footnotes as superscripts, tap a paragraph to read its notes; the Android back key goes up a level and returns to the place in the list. It remembers where the player stopped ("Continue" on the contents) and keeps **bookmarks with notes**, which can be exported as a .txt file. Long sections are cut at sentence ends and only what is on screen is drawn. Add `/core/reader_ui/reader.collection` to a collection to use it. |
 | `core.bookmarks` | The reading position and bookmarks with notes, as pure functions on the reader's save |
@@ -122,12 +123,26 @@ In this order, as production continues:
 4. Sound generated in code: bells, tones, wind.
 5. Google Play Games leaderboards (for the Games of Dharma series only).
 
-## Open item before any release
+## EU consent
 
-**EU consent.** For ads to show in the EEA and UK, Google requires a
-certified consent tool to run before ads are initialised. The AdMob
-extension does not include one. This must be solved before release; India
-and most other markets are unaffected. `core/ads.lua` marks the place.
+For ads in the EEA, the UK and Switzerland, Google requires a certified
+consent form before any ad is requested. Neither AdMob extension release
+includes one, so this library has its own native extension, `/consent`,
+around Google's User Messaging Platform (the form Google certifies and
+offers free in AdMob). `core.ads` shows the form where the law asks for it
+and starts AdMob only once ads are allowed; elsewhere nothing is shown.
+
+- Write the form in AdMob: Privacy & messaging → GDPR (one per AdMob
+  account; it names the apps it covers).
+- The app shows a "Privacy choices" link where
+  `ads.privacy_options_required()` is true, calling
+  `ads.show_privacy_options()`.
+- To see the form outside the EU while testing:
+  `ads.init(save, { consent_debug = { debug_eea = true, test_device = "<id from the log>" } })`;
+  `consent.reset()` forgets the answer.
+
+Verified: the extension compiles on Defold's build server and the APK
+carries Google's consent SDK and the bridge. Not yet seen on a phone.
 
 ## Licence
 
