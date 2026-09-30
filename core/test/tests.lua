@@ -18,6 +18,7 @@ local bookmarks = require "core.bookmarks"
 local notes_export = require "core.notes_export"
 local backup = require "core.backup"
 local search = require "core.search"
+local codes = require "core.codes"
 
 local M = {}
 
@@ -353,6 +354,37 @@ local function test_search()
 	check("limit", search.in_part(part, 2, "dice", capped, 1) == true and #capped == 1)
 end
 
+local function test_codes()
+	local code = codes.encode("YR", { { 2, 1 }, { 2, 0 }, { 14, 1307 }, { 5, 5 }, { 3, 2 } })
+	check("code looks right", code:match("^YR%-[0-9A-Z%-]+$") ~= nil and not code:find("[ILOU]", 4), code)
+	local r = codes.decode("YR", code)
+	check("code reads back", r and r:take(2) == 1 and r:take(2) == 0 and r:take(14) == 1307 and r:take(5) == 5
+		and r:take(3) == 2, code)
+	local sloppy = code:lower():gsub("%-", " ")
+	check("lower case and spaces are fine", codes.decode("YR", sloppy) ~= nil, sloppy)
+	-- change one character: the checksum notices
+	local i = 5
+	local c = code:sub(i, i)
+	local wrong = code:sub(1, i - 1) .. (c == "7" and "8" or "7") .. code:sub(i + 1)
+	local _, err = codes.decode("YR", wrong)
+	check("a typo is caught", err == "typo", wrong)
+	local _, other = codes.decode("YR", "AB-1234-56")
+	check("another kind of code", other == "other")
+	local o_for_zero = code:gsub("0", "O")
+	check("O read as zero", codes.decode("YR", o_for_zero) ~= nil)
+	local big = {}
+	for n = 1, 115 do
+		big[n] = { 1, n % 3 == 0 and 1 or 0 }
+	end
+	local long = codes.encode("YR", big)
+	local rb = codes.decode("YR", long)
+	local okbits = rb ~= nil
+	for n = 1, 115 do
+		okbits = okbits and rb:take(1) == (n % 3 == 0 and 1 or 0)
+	end
+	check("115 flags in a code", okbits and #long < 40, #long)
+end
+
 function M.run()
 	failures, passed = 0, 0
 	test_rng()
@@ -370,6 +402,7 @@ function M.run()
 	test_highlights()
 	test_backup()
 	test_search()
+	test_codes()
 	print(string.format("core tests: %d passed, %d failed", passed, failures))
 	return failures
 end
