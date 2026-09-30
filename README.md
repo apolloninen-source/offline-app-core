@@ -39,6 +39,9 @@ commit at `archive/<full commit hash>.zip`. Then, in Lua:
 `auto_finish_transactions = 0` matters: "Remove ads" must be acknowledged,
 not finished, or Google Play treats it as consumed (see `core/purchase.lua`).
 
+A new app starts from `template/` (settings, collection, the steps and
+the rules): see `template/README.md`.
+
 ## Modules
 
 | Module | What it does |
