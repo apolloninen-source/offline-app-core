@@ -16,6 +16,7 @@ local page = require "core.ui.page"
 local note_editor = require "core.ui.note_editor"
 local bookmarks = require "core.bookmarks"
 local notes_export = require "core.notes_export"
+local backup = require "core.backup"
 
 local M = {}
 
@@ -302,6 +303,28 @@ local function test_notes_export()
 	check("no sharing extension on desktop", shared == false)
 end
 
+local function test_backup()
+	local app = "offline-app-core-test"
+	sys.save(sys.get_save_file(app, "save"), { readings = { ["7.3"] = "The mind 🙏 is quick" }, streak = { best = 4 },
+		today = { ids = { "1.1", "7.3" }, results = { true, false } } })
+	sys.save(sys.get_save_file(app, "reader"), { marks = { { kind = "highlight", part = 3, section = 311, chunk = 2,
+		from = 1, to = 2, quote = "Q", note = "N" } }, last = { part = 3, section = 311, chunk = 4 } })
+	local text = json.encode(backup.collect(app, { "save", "reader" }))
+	-- wipe, then restore
+	sys.save(sys.get_save_file(app, "save"), {})
+	sys.save(sys.get_save_file(app, "reader"), {})
+	local ok, date = backup.restore(app, text)
+	local s1 = sys.load(sys.get_save_file(app, "save"))
+	local s2 = sys.load(sys.get_save_file(app, "reader"))
+	check("backup restores", ok and date == notes_export.date())
+	check("backup keeps notes with emoji", s1.readings and s1.readings["7.3"] == "The mind 🙏 is quick")
+	check("backup keeps lists", s1.today and s1.today.results and s1.today.results[1] == true and s1.today.results[2] == false
+		and s1.today.ids[2] == "7.3")
+	check("backup keeps marks", s2.marks and s2.marks[1].note == "N" and s2.marks[1].to == 2 and s2.last.chunk == 4)
+	check("backup refuses other apps", select(2, backup.restore("another-app", text)) ~= nil)
+	check("backup refuses other files", backup.decode("hello", app) == nil and backup.decode("{\"a\":1}", app) == nil)
+end
+
 function M.run()
 	failures, passed = 0, 0
 	test_rng()
@@ -317,6 +340,7 @@ function M.run()
 	test_bookmarks()
 	test_notes_export()
 	test_highlights()
+	test_backup()
 	print(string.format("core tests: %d passed, %d failed", passed, failures))
 	return failures
 end

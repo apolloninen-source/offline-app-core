@@ -1068,5 +1068,11 @@ function on_message(self, message_id, message, sender)
 		end
 	elseif message_id == hash("close") then
 		close(self)
+	elseif message_id == hash("reload") then
+		-- the app restored a backup: read the marks and position again
+		self.store = save_mod.open(sys.get_config_string("reader.save_id", "reader"), { marks = {} }, "reader")
+		if self.visible then
+			show_contents(self)
+		end
 	end
 end

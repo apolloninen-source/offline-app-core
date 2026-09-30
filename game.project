@@ -4,7 +4,7 @@ version = 0.1.0
 custom_resources = /core/test/fixture
 
 [library]
-include_dirs = core consent
+include_dirs = core consent files
 
 [bootstrap]
 main_collection = /core/test/test.collectionc
