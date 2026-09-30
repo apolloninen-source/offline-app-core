@@ -23,9 +23,24 @@ function M.whatsapp_url(text)
 	return "https://wa.me/?text=" .. M.url_encode(text)
 end
 
---- Opens WhatsApp (or the browser) with the message. Returns false if the
---- system could not open the link.
+--- The link that opens the WhatsApp app itself with the message.
+function M.whatsapp_app_url(text)
+	return "whatsapp://send?text=" .. M.url_encode(text)
+end
+
+--- Opens WhatsApp with the message. The app link comes first: WhatsApp's
+--- web page (wa.me) garbles emoji such as the result squares. Without
+--- WhatsApp: the phone's share sheet (the Sharing extension, global
+--- `share`), else the web link. Returns false if nothing could be opened.
 function M.to_whatsapp(text)
+	if sys.open_url(M.whatsapp_app_url(text)) then
+		return true
+	end
+	local sharing = rawget(_G, "share")
+	if type(sharing) == "table" and sharing.text then
+		sharing.text(text)
+		return true
+	end
 	return sys.open_url(M.whatsapp_url(text))
 end
 

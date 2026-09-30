@@ -98,6 +98,9 @@ local function test_share()
 	check("encode", share.url_encode("a b&c") == "a%20b%26c", share.url_encode("a b&c"))
 	check("encode utf8", share.url_encode("é") == "%C3%A9", share.url_encode("é"))
 	check("url", share.whatsapp_url("hi there") == "https://wa.me/?text=hi%20there")
+	check("app url", share.whatsapp_app_url("hi there") == "whatsapp://send?text=hi%20there")
+	check("squares encoded as UTF-8", share.url_encode(share.squares({ true, false })) == "%F0%9F%9F%A9%E2%AC%9B",
+		share.url_encode(share.squares({ true, false })))
 	check("squares", share.squares({ true, false, true }) == "🟩⬛🟩")
 	check("text", share.text({ "a", "b" }) == "a\nb")
 end
