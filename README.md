@@ -51,9 +51,10 @@ the rules): see `template/README.md`.
 | `core.day` | Calendar days as numbers (day 0 = 1970-01-01), in the player's local date, like Wordle; challenge numbers from the app's launch day |
 | `core.save` | The player's saved state, on the phone only, with defaults filled in for new fields |
 | `core.streak` | Daily streaks: current, best, days played |
-| `core.share` | Result text and a WhatsApp link (`wa.me`), with no extension needed |
+| `core.share` | Result text and a WhatsApp link (`wa.me`), with no extension needed; `share.sheet` opens the share sheet with any text |
 | `core.ads` | The shared ad rules and the AdMob link: at most one App open ad and one interstitial a day, a banner only under the text in the reader (in its own space, never over the text), nothing after "Remove ads", ad content rated PG at most, never personalized. An app can switch any of them off. |
 | `core.backup` | "Backup file" and "Restore from a backup file": all of an app's saves as one JSON file the player keeps anywhere (Files, Drive, email), checked before restoring. No account, no server |
+| `core.codes` | Short codes to read aloud, type or paste (Crockford base 32 with a checksum that catches typos): numbers packed into a few letters, no server |
 | `core.search` | Finding a word or phrase in the book: normalizing the query, one result per paragraph with a snippet, the paragraph piece to open |
 | `/files` | Native extension: the phone's file picker, as the Lua module `filepicker` (`filepicker.open(function(self, text, err) … end)`), used to restore a backup |
 | `/consent` | Native extension: Google's consent form (UMP) for Android, as the Lua module `consent` (see "EU consent") |
