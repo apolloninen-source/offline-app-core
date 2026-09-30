@@ -44,6 +44,17 @@ function M.to_whatsapp(text)
 	return sys.open_url(M.whatsapp_url(text))
 end
 
+--- Opens the phone's share sheet with the text: any app, or Copy. Without
+--- the Sharing extension, WhatsApp.
+function M.sheet(text)
+	local sharing = rawget(_G, "share")
+	if type(sharing) == "table" and sharing.text then
+		sharing.text(text)
+		return true
+	end
+	return M.to_whatsapp(text)
+end
+
 --- A row of squares for a result, e.g. { true, true, false } -> "🟩🟩⬛".
 function M.squares(results, yes, no)
 	local out = {}
