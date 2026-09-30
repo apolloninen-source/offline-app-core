@@ -14,11 +14,17 @@
 -- back key (or the ‹ link in the header) goes back up a level.
 --
 -- The reader remembers where the player stopped ("Continue" on the
--- contents) and keeps bookmarks with notes: "Bookmark" in a section's
--- header marks the paragraph at the top of the screen and asks for an
--- optional note; marked paragraphs have a bar in the margin, and tapping
--- one shows its note. Both are stored on the phone, in the app's save
--- folder (reader.save_id, default "reader"), in a file named "reader".
+-- contents) and keeps one growing list of marks, each with an optional
+-- note (the player's own annotation):
+--   * bookmarks: "Bookmark" in a section's header marks the paragraph at the
+--     top of the screen; it gets a bar in the margin;
+--   * highlights: press and hold a paragraph, tap its sentences, "Highlight";
+--     they are tinted in the text.
+-- Tapping a marked paragraph shows its note. The Marks page lists them all
+-- in book order, filtered (all, highlights, bookmarks, with notes), to open,
+-- annotate, share or remove, and exports them as a .txt file. Everything is
+-- stored on the phone, in the app's save folder (reader.save_id, default
+-- "reader"), in a file named "reader".
 --
 -- Long sections are cut into chunks at sentence ends, and only the chunks on
 -- screen are drawn, so even the longest sections stay light on cheap phones.
@@ -37,6 +43,7 @@ local bookmarks = require "core.bookmarks"
 local note_editor = require "core.ui.note_editor"
 local notes_export = require "core.notes_export"
 local ads = require "core.ads"
+local share = require "core.share"
 
 local TOUCH = hash("mouse_button_left")
 local BACK = hash("key_back")
@@ -47,6 +54,7 @@ local MARGIN = 44
 local HEADER_H = 170
 local GAP = 22
 local TAP_SLOP = 14
+local HOLD = 0.5 -- seconds of press-and-hold that open the highlight picker
 
 local function config_color(key, default)
 	return text.color(sys.get_config_string("reader." .. key, default))
@@ -89,6 +97,53 @@ local function add(self, str, opts)
 	self.items[#self.items + 1] = item
 	self.cursor = -top + h + (opts.space_after or GAP)
 	return item
+end
+
+-- Adds a text on a tinted band (a highlight). Returns the item; its node is
+-- the band, with the text inside.
+local function add_highlighted(self, str, opts)
+	opts = opts or {}
+	local scale = opts.scale or 1
+	local width = self.width - 2 * MARGIN
+	local node, h = new_text(self, str, "body", opts.color or self.colors.ink, width, opts.scale)
+	local top = -self.cursor - (opts.space_before or 0)
+	local band = gui.new_box_node(vmath.vector3(MARGIN - 10, top + 5, 0), vmath.vector3(width + 20, h + 10, 0))
+	gui.set_pivot(band, gui.PIVOT_NW)
+	gui.set_color(band, self.colors.highlight)
+	gui.set_parent(band, self.content)
+	gui.set_parent(node, band)
+	gui.set_position(node, vmath.vector3(10, -5, 0))
+	gui.set_inherit_alpha(node, false)
+	local item = { node = band, top = top, height = h, on_tap = opts.on_tap }
+	self.items[#self.items + 1] = item
+	self.cursor = -top + h + (opts.space_after or GAP)
+	return item
+end
+
+-- Adds several short tappable labels on one line (filters, actions).
+-- parts: { { label, on_tap, color } }. Returns their items.
+local function add_inline(self, parts, opts)
+	opts = opts or {}
+	local scale = opts.scale or 1
+	local top = -self.cursor - (opts.space_before or 0)
+	local x, line_h, out = MARGIN, 0, {}
+	for _, part in ipairs(parts) do
+		local metrics = measure(self, "body", part[1], 0, 1, false)
+		local node = gui.new_text_node(vmath.vector3(x, top, 0), part[1])
+		gui.set_font(node, "body")
+		gui.set_pivot(node, gui.PIVOT_NW)
+		gui.set_color(node, part[3] or self.colors.accent)
+		gui.set_scale(node, vmath.vector3(scale, scale, 1))
+		gui.set_parent(node, self.content)
+		local w, h = metrics.width * scale, metrics.height * scale
+		local item = { node = node, top = top, height = h, on_tap = part[2], x0 = x - 14, x1 = x + w + 14 }
+		self.items[#self.items + 1] = item
+		out[#out + 1] = item
+		x = x + w + (opts.gap or 40)
+		line_h = math.max(line_h, h)
+	end
+	self.cursor = -top + line_h + (opts.space_after or GAP)
+	return out
 end
 
 -- The text area: below the header, above the banner's space (if any).
@@ -235,8 +290,14 @@ local function show_notes(self, section, nums, mark)
 	gui.set_parent(panel, self.root)
 	gui.set_inherit_alpha(panel, false)
 	local body = {}
-	if mark then
-		body[1] = (mark.note or "") ~= "" and ("Your note: " .. mark.note) or "Bookmarked."
+	for _, m in ipairs(mark and (mark[1] and mark or { mark }) or {}) do
+		if (m.note or "") ~= "" then
+			body[#body + 1] = "Your note: " .. m.note
+		elseif bookmarks.kind(m) == "highlight" then
+			body[#body + 1] = "Highlighted. Press and hold the paragraph to change it."
+		else
+			body[#body + 1] = "Bookmarked."
+		end
 	end
 	for _, num in ipairs(nums or {}) do
 		body[#body + 1] = text.superscript(num) .. " " .. (section.notes[num] or "")
@@ -261,12 +322,35 @@ local function show_notes(self, section, nums, mark)
 end
 
 -- A bar in the margin beside a bookmarked paragraph.
-local function mark_bar(self, item)
-	local bar = gui.new_box_node(vmath.vector3(-18, 0, 0), vmath.vector3(5, item.height, 0))
+local function mark_bar(self, item, height)
+	local bar = gui.new_box_node(vmath.vector3(-18, 0, 0), vmath.vector3(5, height or item.height, 0))
 	gui.set_pivot(bar, gui.PIVOT_N)
 	gui.set_color(bar, self.colors.accent)
 	gui.set_parent(bar, item.node)
 	item.bar = bar
+end
+
+-- "Vana Parva · Aranya Parva · Section CCCXI"
+local function place_of(self, part_n, section_n)
+	local part = self.book:part(part_n)
+	local section = part.sections[section_n]
+	return part.name .. (section.sub and (" · " .. section.sub) or "") .. " · Section " .. section.label
+end
+
+-- Splits a chunk's sentences into runs: plain ones, and one per highlight.
+local function runs_of(sentences, highlights)
+	local runs = {}
+	local i = 1
+	while i <= #sentences do
+		local mark = bookmarks.highlight_at(highlights, i)
+		local j = i
+		while j < #sentences and bookmarks.highlight_at(highlights, j + 1) == mark do
+			j = j + 1
+		end
+		runs[#runs + 1] = { from = i, to = j, mark = mark }
+		i = j + 1
+	end
+	return runs
 end
 
 show_section = function(self, part_n, section_n, chunk)
@@ -276,32 +360,57 @@ show_section = function(self, part_n, section_n, chunk)
 	self.view, self.part_n, self.section_n = "section", part_n, section_n
 	clear(self)
 	set_header(self, part.name, "Section " .. section.label, "Bookmark")
+	local st = self.store.values
+	if not st.highlight_tip_seen then
+		add(self, "Tip: press and hold a paragraph to highlight sentences.", { color = self.colors.muted,
+			scale = 0.8, space_after = 14 })
+	end
 	if section.sub then
 		add(self, section.sub, { color = self.colors.muted, space_after = GAP + 6 })
 	end
-	local marks = bookmarks.in_section(self.store.values, part_n, section_n)
+	local marks = bookmarks.in_section(st, part_n, section_n)
+	local highlights = bookmarks.highlights_in(st, part_n, section_n)
 	local n = 0
 	self.chunks = {}
 	for _, para in ipairs(section.paras) do
 		local pieces = text.chunks(para, 700)
 		for i, piece in ipairs(pieces) do
 			n = n + 1
-			local shown, notes = text.render(piece)
-			local last = i == #pieces
 			local k = n
-			local item = add(self, shown, {
-				space_after = last and GAP + 8 or 6,
-				on_tap = function()
-					local mark = bookmarks.in_section(self.store.values, part_n, section_n)[k]
-					if #notes > 0 or mark then
-						show_notes(self, section, notes, mark)
+			local sentences = text.sentences(piece)
+			local runs = highlights[k] and runs_of(sentences, highlights[k]) or { { from = 1, to = #sentences } }
+			local first, last_item
+			for r, run in ipairs(runs) do
+				local raw = highlights[k] and table.concat(sentences, " ", run.from, run.to) or piece
+				local shown, notes = text.render(raw)
+				local space
+				if r < #runs then
+					space = 2
+				else
+					space = i == #pieces and GAP + 8 or 6
+				end
+				local on_tap = function()
+					local here = run.mark or bookmarks.in_section(self.store.values, part_n, section_n)[k]
+					if #notes > 0 or here then
+						show_notes(self, section, notes, here)
 					end
-				end,
-			})
-			item.chunk, item.shown = k, shown
-			self.chunks[k] = item
+				end
+				local item
+				if run.mark then
+					item = add_highlighted(self, shown, { space_after = space + 4, space_before = r > 1 and 4 or 0,
+						on_tap = on_tap })
+				else
+					item = add(self, shown, { space_after = space, on_tap = on_tap })
+				end
+				item.chunk, item.run = k, run
+				first = first or item
+				last_item = item
+			end
+			local shown_all = text.render(piece)
+			self.chunks[k] = { top = first.top, height = first.top - (last_item.top - last_item.height),
+				shown = shown_all, sentences = sentences }
 			if marks[k] then
-				mark_bar(self, item)
+				mark_bar(self, first, self.chunks[k].height)
 			end
 		end
 	end
@@ -379,7 +488,7 @@ show_contents = function(self)
 		end
 	end
 	if st.marks and #st.marks > 0 then
-		add(self, string.format("Bookmarks (%d) ›", #st.marks), { color = self.colors.accent,
+		add(self, string.format("Bookmarks & highlights (%d) ›", #st.marks), { color = self.colors.accent,
 			space_after = 14, on_tap = function() show_marks(self) end })
 	end
 	if last or (st.marks and #st.marks > 0) then
@@ -396,70 +505,108 @@ show_contents = function(self)
 	set_scroll(self, 0)
 end
 
--- The list of bookmarks, in book order.
-show_marks = function(self)
+local FILTER_LABELS = { all = "All", highlight = "Highlights", bookmark = "Bookmarks", annotated = "With notes" }
+
+local function export_marks(self)
+	local index = self.book:index()
+	local app_id = sys.get_config_string("reader.save_id", "reader")
+	local file = app_id .. "-marks-" .. notes_export.date() .. ".txt"
+	local txt = notes_export.text((index.title or "The book") .. ": my highlights and bookmarks",
+		{ { heading = "Highlights and bookmarks, in book order", entries = bookmarks.export_entries(self.store.values) } })
+	local path, shared = notes_export.export(app_id, file, txt)
+	return path and (shared and ("Exported: " .. file) or ("Saved as " .. file)) or "Could not save the file"
+end
+
+-- The growing list of marks, in book order, with filters.
+show_marks = function(self, status)
 	close_notes(self)
 	self.view = "marks"
 	clear(self)
-	set_header(self, "Contents", "Bookmarks")
-	local marks = self.store.values.marks
-	if #marks == 0 then
-		add(self, "No bookmarks yet. In a section, tap “Bookmark” to mark the paragraph at the top of the screen.",
-			{ color = self.colors.muted })
+	set_header(self, "Contents", "Marks")
+	local st = self.store.values
+	local which = self.marks_filter or "all"
+	local filters = {}
+	for _, f in ipairs(bookmarks.FILTERS) do
+		filters[#filters + 1] = { string.format("%s (%d)", FILTER_LABELS[f], bookmarks.count(st, f)),
+			function()
+				self.marks_filter = f
+				show_marks(self)
+			end, f == which and self.colors.ink or self.colors.accent }
 	end
-	local index = self.book:index()
-	if #marks > 0 then
-		local status
-		status = add(self, "Export notes (.txt)", { color = self.colors.accent, space_after = GAP + 10,
-			on_tap = function()
-				local app_id = sys.get_config_string("reader.save_id", "reader")
-				local file = app_id .. "-bookmarks-" .. notes_export.date() .. ".txt"
-				local txt = notes_export.text((index.title or "Bookmarks") .. ": my bookmarks",
-					{ { heading = "Bookmarks", entries = bookmarks.export_entries(self.store.values) } })
-				local path, shared = notes_export.export(app_id, file, txt)
-				gui.set_text(status.node, path and (shared and "Exported: " .. file
-					or "Saved as " .. file) or "Could not save the file")
-			end })
+	add_inline(self, { filters[1], filters[2] }, { scale = 0.85, space_after = 8 })
+	add_inline(self, { filters[3], filters[4] }, { scale = 0.85, space_after = GAP })
+	if #(st.marks or {}) > 0 then
+		add(self, status or "Export as a text file (.txt) ›", { color = status and self.colors.muted or self.colors.accent,
+			scale = 0.85, space_after = GAP + 10,
+			on_tap = function() show_marks(self, export_marks(self)) end })
 	end
-	for i, m in ipairs(marks) do
+	local list = bookmarks.filter(st, which)
+	if #list == 0 then
+		add(self, "Nothing here yet. In a section, press and hold a paragraph to highlight sentences, "
+			.. "or tap “Bookmark” to mark the paragraph at the top of the screen.", { color = self.colors.muted })
+	end
+	local title = self.book:index().title
+	for _, m in ipairs(list) do
 		local open = function() show_section(self, m.part, m.section, m.chunk) end
-		local section = self.book:section(m.part, m.section)
-		add(self, string.format("%s  ·  Section %s", index.parts[m.part].name, section and section.label or "?"),
-			{ color = self.colors.accent, space_after = 4, on_tap = open })
-		add(self, "“" .. (m.excerpt or "") .. "”", { color = self.colors.muted, scale = 0.85,
-			space_after = 6, on_tap = open })
-		if m.note and m.note ~= "" then
-			add(self, m.note, { space_after = 6, on_tap = open })
+		local is_highlight = bookmarks.kind(m) == "highlight"
+		add(self, (is_highlight and "" or "Bookmark · ") .. (m.place or place_of(self, m.part, m.section)),
+			{ color = self.colors.accent, scale = 0.8, space_after = 8, on_tap = open })
+		if is_highlight then
+			add_highlighted(self, "“" .. (m.quote or "") .. "”", { scale = 0.9, space_after = 10, on_tap = open })
+		else
+			add(self, "“" .. (m.excerpt or "") .. "”", { color = self.colors.muted, scale = 0.85,
+				space_after = 8, on_tap = open })
 		end
-		add(self, (m.note or "") ~= "" and "Edit note" or "Add a note", { color = self.colors.accent, scale = 0.8,
-			indent = 0, space_after = 4, on_tap = function() self.open_editor(self, m) end })
+		if (m.note or "") ~= "" then
+			add(self, m.note, { space_after = 8, on_tap = function() self.open_editor(self, m) end })
+		end
+		local actions = { { (m.note or "") ~= "" and "Edit note" or "Add a note", function() self.open_editor(self, m) end } }
+		if is_highlight then
+			actions[#actions + 1] = { "Share", function() share.to_whatsapp(bookmarks.share_text(m, title)) end }
+		end
 		local remove
-		remove = add(self, "Remove", { color = self.colors.muted, scale = 0.8, space_after = GAP + 12,
-			on_tap = function()
-				if remove.armed then
-					bookmarks.remove(self.store.values, i)
-					self.store:write()
-					show_marks(self)
-				else
-					remove.armed = true
-					gui.set_text(remove.node, "Tap again to remove")
-				end
-			end })
+		actions[#actions + 1] = { "Remove", function()
+			if remove.armed then
+				bookmarks.remove(st, bookmarks.index_of(st, m))
+				self.store:write()
+				show_marks(self)
+			else
+				remove.armed = true
+				gui.set_text(remove.node, "Tap again to remove")
+			end
+		end, self.colors.muted }
+		local items = add_inline(self, actions, { scale = 0.8, space_after = GAP + 16 })
+		remove = items[#items]
 	end
 	set_scroll(self, 0)
 end
 
--- The note editor, for a new bookmark (place given) or an existing one.
+-- The note editor, for a new bookmark (place given) or an existing mark.
 local function open_editor(self, mark)
 	close_notes(self)
 	self.editing = mark
+	local is_highlight = bookmarks.kind(mark) == "highlight"
+	local shown = is_highlight and bookmarks.excerpt(mark.quote or "", 160) or mark.excerpt
 	self.editor = note_editor.open({
 		width = self.width, height = self.height, header = HEADER_H, parent = self.root,
-		title = "Bookmark", prompt = mark.excerpt and ("“" .. mark.excerpt .. "”") or nil,
-		text = mark.note or "", max = 300,
+		title = is_highlight and "Note" or "Bookmark", prompt = shown and ("“" .. shown .. "”") or nil,
+		text = mark.note or "", max = 1000,
 		colors = { panel = self.colors.background, field = self.colors.field, ink = self.colors.ink,
 			muted = self.colors.muted, accent = self.colors.accent },
 	})
+end
+
+local function redraw(self)
+	if self.view == "section" then
+		local chunk = current_chunk(self)
+		local scroll = self.scroll
+		show_section(self, self.part_n, self.section_n, chunk)
+		set_scroll(self, scroll)
+	elseif self.view == "marks" then
+		local scroll = self.scroll
+		show_marks(self)
+		set_scroll(self, scroll)
+	end
 end
 
 local function close_editor(self, keep)
@@ -469,17 +616,153 @@ local function close_editor(self, keep)
 	self.editor, self.editing = nil, nil
 	if keep then
 		mark.note = note
-		bookmarks.add(self.store.values, mark)
+		if bookmarks.kind(mark) == "bookmark" then
+			bookmarks.add(self.store.values, mark) -- new, or its note updated
+		end
 		self.store:write()
 	end
-	-- redraw, keeping the place
-	if self.view == "section" then
-		local chunk = current_chunk(self)
-		local scroll = self.scroll
-		show_section(self, self.part_n, self.section_n, chunk)
-		set_scroll(self, scroll)
-	elseif self.view == "marks" then
-		show_marks(self)
+	redraw(self)
+end
+
+-- Choosing sentences to highlight ---------------------------------------------
+
+local function close_picker(self)
+	if self.picker then
+		gui.delete_node(self.picker.panel)
+		self.picker = nil
+	end
+end
+
+local function paint_picker(self)
+	local p = self.picker
+	for i, row in ipairs(p.rows) do
+		local selected = p.from and i >= p.from and i <= p.to
+		gui.set_color(row.box, selected and self.colors.highlight or self.colors.field)
+	end
+	gui.set_enabled(p.remove.node, p.existing ~= nil)
+end
+
+-- Press and hold on a paragraph: its sentences, to tap and highlight.
+local function open_picker(self, k, mark)
+	close_notes(self)
+	local chunk = self.chunks[k]
+	local W, H = self.width, self.height
+	local p = { k = k, rows = {}, existing = mark }
+	if mark then
+		p.from, p.to = mark.from, mark.to
+	end
+	p.panel = gui.new_box_node(vmath.vector3(W / 2, H / 2, 0), vmath.vector3(W, H, 0))
+	gui.set_color(p.panel, self.colors.background)
+	gui.set_parent(p.panel, self.root)
+	local function label(str, x, y, pivot, color, font, scale)
+		local node = gui.new_text_node(vmath.vector3(x - W / 2, y - H / 2, 0), str)
+		gui.set_font(node, font or "body")
+		gui.set_pivot(node, pivot)
+		gui.set_color(node, color)
+		if scale then
+			gui.set_scale(node, vmath.vector3(scale, scale, 1))
+		end
+		gui.set_parent(node, p.panel)
+		return node
+	end
+	label("‹ Cancel", MARGIN, H - 40, gui.PIVOT_NW, self.colors.muted)
+	label("Highlight", W - MARGIN, H - 40, gui.PIVOT_NE, self.colors.accent)
+	label("Highlight", MARGIN, H - 88, gui.PIVOT_NW, self.colors.ink, "title")
+	label("Tap the sentences to highlight. Tap the first or last again to shorten.", MARGIN, H - HEADER_H - 14,
+		gui.PIVOT_NW, self.colors.muted, "body", 0.75)
+
+	local y = H - HEADER_H - 70
+	local width = W - 2 * MARGIN
+	local scale = 0.9
+	for i, sentence in ipairs(chunk.sentences) do
+		local shown = text.render(sentence)
+		local h = measure(self, "body", shown, (width - 24) / scale, 1.15).height * scale
+		local box = gui.new_box_node(vmath.vector3(MARGIN - 12 - W / 2, y + 8 - H / 2, 0), vmath.vector3(width + 24, h + 16, 0))
+		gui.set_pivot(box, gui.PIVOT_NW)
+		gui.set_parent(box, p.panel)
+		local node = gui.new_text_node(vmath.vector3(12, -8, 0), shown)
+		gui.set_font(node, "body")
+		gui.set_pivot(node, gui.PIVOT_NW)
+		gui.set_line_break(node, true)
+		gui.set_size(node, vmath.vector3((width - 24) / scale, 0, 0))
+		gui.set_leading(node, 1.15)
+		gui.set_scale(node, vmath.vector3(scale, scale, 1))
+		gui.set_color(node, self.colors.ink)
+		gui.set_parent(node, box)
+		p.rows[i] = { box = box, y0 = y - h - 8, y1 = y + 8 }
+		y = y - h - 30
+	end
+	p.note_btn = { node = label("Highlight and add a note ›", MARGIN, y - 10, gui.PIVOT_NW, self.colors.accent),
+		y0 = y - 60, y1 = y }
+	p.remove = { node = label("Remove this highlight", MARGIN, y - 70, gui.PIVOT_NW, self.colors.muted),
+		y0 = y - 120, y1 = y - 60 }
+	self.picker = p
+	paint_picker(self)
+end
+
+local function save_picker(self, with_note)
+	local p = self.picker
+	local chunk = self.chunks[p.k]
+	close_picker(self)
+	if not p.from then
+		return
+	end
+	local st = self.store.values
+	if p.existing then
+		bookmarks.remove(st, bookmarks.index_of(st, p.existing))
+	end
+	local mark = bookmarks.add_highlight(st, {
+		part = self.part_n, section = self.section_n, chunk = p.k, from = p.from, to = p.to,
+		place = place_of(self, self.part_n, self.section_n), day = os.time(),
+		note = p.existing and p.existing.note or nil,
+	}, chunk.sentences)
+	st.highlight_tip_seen = true
+	self.store:write()
+	redraw(self)
+	if with_note then
+		open_editor(self, mark)
+	end
+end
+
+local function picker_tap(self, x, y)
+	local p = self.picker
+	if y > self.height - 90 then
+		if x < self.width / 2 then
+			close_picker(self)
+		else
+			save_picker(self, false)
+		end
+		return
+	end
+	for i, row in ipairs(p.rows) do
+		if y >= row.y0 and y <= row.y1 then
+			if not p.from then
+				p.from, p.to = i, i
+			elseif i < p.from then
+				p.from = i
+			elseif i > p.to then
+				p.to = i
+			elseif i == p.from and i == p.to then
+				p.from, p.to = nil, nil
+			elseif i == p.from then
+				p.from = i + 1
+			elseif i == p.to then
+				p.to = i - 1
+			else
+				p.from, p.to = i, i
+			end
+			paint_picker(self)
+			return
+		end
+	end
+	if y >= p.note_btn.y0 and y <= p.note_btn.y1 then
+		save_picker(self, true)
+	elseif p.existing and y >= p.remove.y0 and y <= p.remove.y1 then
+		local st = self.store.values
+		bookmarks.remove(st, bookmarks.index_of(st, p.existing))
+		self.store:write()
+		close_picker(self)
+		redraw(self)
 	end
 end
 
@@ -492,10 +775,9 @@ local function bookmark_here(self)
 	end
 	local st = self.store.values
 	local existing = bookmarks.find(st, self.part_n, self.section_n, k)
-	local part = self.book:part(self.part_n)
 	open_editor(self, existing and st.marks[existing] or {
-		part = self.part_n, section = self.section_n, chunk = k,
-		place = part.name .. " · Section " .. part.sections[self.section_n].label,
+		kind = "bookmark", part = self.part_n, section = self.section_n, chunk = k,
+		place = place_of(self, self.part_n, self.section_n),
 		excerpt = bookmarks.excerpt(item.shown, 90), note = "", day = os.time(),
 	})
 end
@@ -528,7 +810,9 @@ local function close(self)
 end
 
 local function go_back(self)
-	if self.notes_panel then
+	if self.picker then
+		close_picker(self)
+	elseif self.notes_panel then
 		close_notes(self)
 	elseif self.view == "section" then
 		show_part(self, self.part_n, self.section_n)
@@ -554,6 +838,7 @@ function init(self)
 		accent = config_color("accent", "#8B2E16"),
 		muted = config_color("muted", "#7A6A58"),
 		field = config_color("field", "#E7D9BA"),
+		highlight = config_color("highlight", "#E6BE5C73"),
 	}
 	self.store = save_mod.open(sys.get_config_string("reader.save_id", "reader"), { marks = {} }, "reader")
 	self.open_editor = open_editor
@@ -642,14 +927,30 @@ function init(self)
 	end
 end
 
+-- The item under a point of the screen, if it can be tapped.
+local function item_at(self, x, y)
+	local cy = y - (self.height - HEADER_H) - self.scroll
+	for _, item in ipairs(self.items) do
+		if item.on_tap and cy <= item.top + 8 and cy >= item.top - item.height - 8
+			and (not item.x0 or (x >= item.x0 and x <= item.x1)) then
+			return item
+		end
+	end
+end
+
 local function tap(self, x, y)
+	if self.picker then
+		picker_tap(self, x, y)
+		return
+	end
 	if self.notes_panel then
 		close_notes(self)
 		return
 	end
 	if self.top_shown then
 		local p = gui.get_position(self.top_btn)
-		if math.abs(x - p.x) < 50 and math.abs(y - p.y) < 50 then
+		-- kept clear of "Bookmark" just above it
+		if math.abs(x - p.x) < 50 and math.abs(y - p.y) < 36 then
 			set_scroll(self, 0)
 			return
 		end
@@ -665,13 +966,21 @@ local function tap(self, x, y)
 		end
 		return
 	end
-	-- y in content coordinates: 0 at the top of the content, negative below
-	local cy = y - (self.height - HEADER_H) - self.scroll
-	for _, item in ipairs(self.items) do
-		if item.on_tap and cy <= item.top + 8 and cy >= item.top - item.height - 8 then
-			item.on_tap()
-			return
-		end
+	local item = item_at(self, x, y)
+	if item then
+		item.on_tap()
+	end
+end
+
+-- Press and hold on a paragraph of a section: choose sentences to highlight.
+local function hold(self, x, y)
+	if self.view ~= "section" or self.picker or self.notes_panel or y < (self.bottom or 0)
+		or y > self.height - HEADER_H then
+		return
+	end
+	local item = item_at(self, x, y)
+	if item and item.chunk then
+		open_picker(self, item.chunk, item.run and item.run.mark)
 	end
 end
 
@@ -689,10 +998,12 @@ function on_input(self, action_id, action)
 	if action_id == TOUCH then
 		-- A quick tap can arrive as pressed and released in the same frame.
 		if action.pressed then
-			self.drag = { last = action.y, moved = 0 }
+			self.drag = { last = action.y, moved = 0, x = action.x, y = action.y, held = 0 }
 		end
 		if action.released then
-			if self.drag and self.drag.moved < TAP_SLOP then
+			if self.drag and self.drag.done then
+				-- the press-and-hold already acted
+			elseif self.drag and self.drag.moved < TAP_SLOP then
 				tap(self, action.x, action.y)
 			elseif self.drag then
 				remember(self)
@@ -702,7 +1013,7 @@ function on_input(self, action_id, action)
 			local dy = action.y - self.drag.last
 			self.drag.last = action.y
 			self.drag.moved = self.drag.moved + math.abs(dy)
-			if self.drag.moved >= TAP_SLOP and not self.notes_panel then
+			if self.drag.moved >= TAP_SLOP and not self.notes_panel and not self.picker then
 				set_scroll(self, self.scroll + dy)
 			end
 		end
@@ -712,7 +1023,7 @@ function on_input(self, action_id, action)
 		local dy = action.y - self.drag.last
 		self.drag.last = action.y
 		self.drag.moved = self.drag.moved + math.abs(dy)
-		if self.drag.moved >= TAP_SLOP and not self.notes_panel then
+		if self.drag.moved >= TAP_SLOP and not self.notes_panel and not self.picker then
 			set_scroll(self, self.scroll + dy)
 		end
 		return true
@@ -732,6 +1043,14 @@ end
 function update(self, dt)
 	if self.editor then
 		note_editor.update(self.editor, dt)
+	end
+	local d = self.drag
+	if d and not d.done and d.moved < TAP_SLOP then
+		d.held = d.held + dt
+		if d.held >= HOLD then
+			d.done = true
+			hold(self, d.x, d.y)
+		end
 	end
 end
 

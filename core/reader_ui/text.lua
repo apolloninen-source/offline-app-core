@@ -73,6 +73,43 @@ function M.chunks(paragraph, max_bytes)
 	return out
 end
 
+--- Splits a chunk into sentences, for highlighting: after . ! or ? (with
+--- any closing quotes or brackets, and any footnote markers) followed by a
+--- space. The spaces between sentences are dropped: table.concat(result,
+--- " ") gives the chunk back (with runs of spaces as one).
+function M.sentences(chunk)
+	local out, start, pos = {}, 1, 1
+	while true do
+		local s = chunk:find("[%.!%?]", pos)
+		if not s then
+			break
+		end
+		-- the stop, its closing quotes and brackets, and footnote markers
+		local e = s
+		while true do
+			local q = chunk:match("^[\"'%)%]]", e + 1) or chunk:match("^’", e + 1) or chunk:match("^”", e + 1)
+				or chunk:match("^%[%^%d+%]", e + 1)
+			if not q then
+				break
+			end
+			e = e + #q
+		end
+		if chunk:sub(e + 1, e + 1):match("%s") then
+			local piece = chunk:sub(start, e):gsub("^%s+", "")
+			if piece ~= "" then
+				out[#out + 1] = piece
+			end
+			start = e + 2
+		end
+		pos = e + 1
+	end
+	local rest = chunk:sub(start):gsub("^%s+", ""):gsub("%s+$", "")
+	if rest ~= "" then
+		out[#out + 1] = rest
+	end
+	return out
+end
+
 --- "#F3E9D2" -> vmath.vector4 colour (alpha optional as a 4th byte).
 function M.color(hex)
 	hex = hex:gsub("#", "")

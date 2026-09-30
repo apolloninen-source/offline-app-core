@@ -38,7 +38,11 @@
             <data android:scheme="whatsapp" />
         </intent>
     </queries>
+    <!-- offline-app-core: allowBackup keeps Android's own backup of the app's
+         data (marks, notes, progress) to the player's Google account, if they
+         have backup on; it comes back on a new phone or after a reinstall. -->
     <application
+        android:allowBackup="true"
         {{#has-icons?}}
         android:icon="@drawable/icon"
         {{/has-icons?}}

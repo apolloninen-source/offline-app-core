@@ -245,6 +245,37 @@ local function test_bookmarks()
 	check("excerpt cut at a word", ex == "Day after day countless creatures are…", ex)
 end
 
+local function test_highlights()
+	local sents = text.sentences("Day after day creatures go.[^3] Yet the rest think “we are immortal.” What is more wonderful? Nothing!")
+	check("sentences", #sents == 4 and sents[1] == "Day after day creatures go.[^3]"
+		and sents[2] == "Yet the rest think “we are immortal.”" and sents[4] == "Nothing!", #sents)
+	check("sentences rejoin", table.concat(sents, " ") ==
+		"Day after day creatures go.[^3] Yet the rest think “we are immortal.” What is more wonderful? Nothing!")
+	check("no stop, one sentence", #text.sentences("a line without a stop") == 1)
+	check("abbreviation-like stop mid-word stays", #text.sentences("viz., the five") == 1)
+
+	local st = { marks = {} }
+	bookmarks.add(st, { part = 3, section = 311, chunk = 2, note = "" })
+	local h = bookmarks.add_highlight(st, { part = 3, section = 311, chunk = 2, from = 2, to = 3, note = "wonder" }, sents)
+	check("highlight quote without markers", h.quote == "Yet the rest think “we are immortal.” What is more wonderful?", h.quote)
+	check("bookmark before highlight in one paragraph", bookmarks.kind(st.marks[1]) == "bookmark" and st.marks[2] == h)
+	local h2 = bookmarks.add_highlight(st, { part = 3, section = 311, chunk = 2, from = 1, to = 1, note = "first" }, sents)
+	check("touching highlights join", h2.from == 1 and h2.to == 3 and bookmarks.count(st, "highlight") == 1
+		and h2.note:find("first") and h2.note:find("wonder"), h2.note)
+	check("quote after join", h2.quote:sub(1, 30) == "Day after day creatures go. Ye", h2.quote)
+	bookmarks.add_highlight(st, { part = 1, section = 5, chunk = 1, from = 1, to = 1 }, { "Om." })
+	check("book order across parts", st.marks[1].part == 1)
+	check("filters", bookmarks.count(st, "all") == 3 and bookmarks.count(st, "bookmark") == 1
+		and bookmarks.count(st, "annotated") == 1)
+	local by = bookmarks.highlights_in(st, 3, 311)
+	check("highlight at sentence", bookmarks.highlight_at(by[2], 3) == h2 and bookmarks.highlight_at(by[2], 4) == nil)
+	check("old marks are bookmarks", bookmarks.kind({ part = 1 }) == "bookmark")
+	local msg = bookmarks.share_text({ kind = "highlight", quote = "Q", place = "P", note = "N" }, "The Mahabharata")
+	check("share text", msg == "“Q”\n— The Mahabharata, P\n\nMy note: N", msg)
+	bookmarks.remove(st, bookmarks.index_of(st, h2))
+	check("remove by identity", bookmarks.count(st, "highlight") == 1)
+end
+
 local function test_notes_export()
 	check("export date", notes_export.date({ year = 2026, month = 9, day = 8 }) == "2026-09-08")
 	local st = { marks = {} }
@@ -252,7 +283,7 @@ local function test_notes_export()
 		excerpt = "Day after day", note = "Read again" })
 	bookmarks.add(st, { part = 1, section = 1, chunk = 1, excerpt = "", note = "" })
 	local entries = bookmarks.export_entries(st)
-	check("bookmark entries", #entries == 2 and entries[1][1] == "Part 1, section 1" and #entries[1] == 1
+	check("bookmark entries", #entries == 2 and entries[1][1] == "Bookmark: Part 1, section 1" and #entries[1] == 1
 		and entries[2][3] == "Note: Read again", entries[1][1])
 	local txt = notes_export.text("My notes", {
 		{ heading = "Readings", entries = { { "Q", "A" } } },
@@ -285,6 +316,7 @@ function M.run()
 	test_text_input()
 	test_bookmarks()
 	test_notes_export()
+	test_highlights()
 	print(string.format("core tests: %d passed, %d failed", passed, failures))
 	return failures
 end
