@@ -128,8 +128,22 @@ In this order, as production continues:
 A rule for every app: no ad profile follows the player, and player data is
 never traded. `core.ads` turns on Google's restricted data processing
 before AdMob starts, so Google serves non-personalized ads. No other ad
-networks or analytics are ever added. Still to do: remove the advertising
-ID permission from each app's Android manifest.
+networks or analytics are ever added. `core/android/AndroidManifest.xml`
+removes the advertising ID and Android's ad tracking permissions (Topics,
+Attribution); every app uses it (`[android] manifest =
+/core/android/AndroidManifest.xml`).
+
+The app's own ad units go in its game.project and are used in release
+builds only; debug builds always show Google's test ads:
+
+```ini
+[admob]
+app_id_android = ca-app-pub-…~…
+
+[ads]
+app_open_unit = ca-app-pub-…/…
+interstitial_unit = ca-app-pub-…/…
+```
 
 ## EU consent
 

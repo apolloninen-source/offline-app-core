@@ -13,7 +13,6 @@
 -- harmless no-op, but the rules still run, so they can be tested.
 --
 --   ads.init(save_data, {
---       app_open_unit = "...", interstitial_unit = "...",   -- real IDs at release
 --       interstitial = true,                               -- false in calm apps
 --       max_rating = "PG",                                 -- G, PG (default), T or MA
 --       on_consent = function(can_request_ads) end,        -- optional: refresh a "Privacy choices" link
@@ -34,6 +33,22 @@ local M = {}
 -- in release builds.
 M.TEST_APP_OPEN = "ca-app-pub-3940256099942544/9257395921"
 M.TEST_INTERSTITIAL = "ca-app-pub-3940256099942544/1033173712"
+
+--- The ad units to use. Release builds take the app's own units from
+--- game.project ([ads] app_open_unit, interstitial_unit); debug builds
+--- always use Google's test units, so no one taps a real ad while testing
+--- (AdMob can suspend an account for that). A release build without units
+--- set also falls back to the test units.
+function M.units(is_debug, config)
+	local function pick(key, test)
+		local own = not is_debug and config(key) or ""
+		return own ~= "" and own or test
+	end
+	return {
+		app_open = pick("ads.app_open_unit", M.TEST_APP_OPEN),
+		interstitial = pick("ads.interstitial_unit", M.TEST_INTERSTITIAL),
+	}
+end
 
 local save, opts
 local started = false
@@ -91,8 +106,10 @@ end
 function M.init(save_data, options)
 	save = save_data
 	opts = options or {}
-	opts.app_open_unit = opts.app_open_unit or M.TEST_APP_OPEN
-	opts.interstitial_unit = opts.interstitial_unit or M.TEST_INTERSTITIAL
+	local units = M.units(sys.get_engine_info().is_debug, function(key)
+		return sys.get_config_string(key, "")
+	end)
+	opts.app_open_unit, opts.interstitial_unit = units.app_open, units.interstitial
 	if opts.app_open == nil then opts.app_open = true end
 	if opts.interstitial == nil then opts.interstitial = true end
 	if not admob or M.removed() then

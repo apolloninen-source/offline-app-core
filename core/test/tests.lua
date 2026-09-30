@@ -120,6 +120,18 @@ local function test_ads_and_purchase()
 	check("no interstitial without admob", ads.on_game_start() == false)
 end
 
+local function test_ad_units()
+	local cfg = function(key)
+		return ({ ["ads.app_open_unit"] = "own/open", ["ads.interstitial_unit"] = "own/inter" })[key] or ""
+	end
+	local rel = ads.units(false, cfg)
+	check("release uses own units", rel.app_open == "own/open" and rel.interstitial == "own/inter")
+	local dbg = ads.units(true, cfg)
+	check("debug always uses test units", dbg.app_open == ads.TEST_APP_OPEN and dbg.interstitial == ads.TEST_INTERSTITIAL)
+	local none = ads.units(false, function() return "" end)
+	check("release without units falls back to test", none.app_open == ads.TEST_APP_OPEN)
+end
+
 local function test_save()
 	local data = save.open("offline-app-core-test", { streak = { best = 0 }, name = "x" })
 	data:reset()
@@ -263,6 +275,7 @@ function M.run()
 	test_streak()
 	test_share()
 	test_ads_and_purchase()
+	test_ad_units()
 	test_save()
 	test_reader()
 	test_reader_text()
