@@ -49,7 +49,7 @@ not finished, or Google Play treats it as consumed (see `core/purchase.lua`).
 | `core.save` | The player's saved state, on the phone only, with defaults filled in for new fields |
 | `core.streak` | Daily streaks: current, best, days played |
 | `core.share` | Result text and a WhatsApp link (`wa.me`), with no extension needed |
-| `core.ads` | The shared ad rules and the AdMob link: at most one App open ad and one interstitial a day, never banners, nothing after "Remove ads", ad content rated PG at most. An app can switch either ad off. |
+| `core.ads` | The shared ad rules and the AdMob link: at most one App open ad and one interstitial a day, a banner only under the text in the reader (in its own space, never over the text), nothing after "Remove ads", ad content rated PG at most, never personalized. An app can switch any of them off. |
 | `/consent` | Native extension: Google's consent form (UMP) for Android, as the Lua module `consent` (see "EU consent") |
 | `core.purchase` | The one-time "Remove ads" purchase through Google Play Billing |
 | `core/reader_ui/` | The reader screen: contents, a part's sections (with a jump list of its sub-parts), and the text. Drag to scroll; footnotes as superscripts, tap a paragraph to read its notes; the Android back key goes up a level and returns to the place in the list. It remembers where the player stopped ("Continue" on the contents) and keeps **bookmarks with notes**, which can be exported as a .txt file. Long sections are cut at sentence ends and only what is on screen is drawn. Add `/core/reader_ui/reader.collection` to a collection to use it. |
@@ -143,7 +143,12 @@ app_id_android = ca-app-pub-…~…
 [ads]
 app_open_unit = ca-app-pub-…/…
 interstitial_unit = ca-app-pub-…/…
+banner_unit = ca-app-pub-…/…      # the reader's banner
 ```
+
+The reader keeps a band at the bottom exactly as high as the banner, so the
+text scrolls above it and is never covered. To check the layout on a
+desktop build, `[reader] test_banner_px = 150` pretends a banner shows.
 
 ## EU consent
 

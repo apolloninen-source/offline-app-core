@@ -4,7 +4,8 @@
 -- The rules (decided for all three series):
 --   * at most one App open ad a day, when the app starts;
 --   * at most one interstitial a day, when the first game of the day starts;
---   * never any banner;
+--   * a banner only while reading a text in the reader, in its own space
+--     below the text, never over it (an app can switch it off);
 --   * nothing at all once the player has bought "Remove ads".
 -- An app may opt out of either ad (Paths of Dharma shows no interstitial:
 -- never during or right after practice).
@@ -33,6 +34,7 @@ local M = {}
 -- in release builds.
 M.TEST_APP_OPEN = "ca-app-pub-3940256099942544/9257395921"
 M.TEST_INTERSTITIAL = "ca-app-pub-3940256099942544/1033173712"
+M.TEST_BANNER = "ca-app-pub-3940256099942544/6300978111"
 
 --- The ad units to use. Release builds take the app's own units from
 --- game.project ([ads] app_open_unit, interstitial_unit); debug builds
@@ -47,11 +49,31 @@ function M.units(is_debug, config)
 	return {
 		app_open = pick("ads.app_open_unit", M.TEST_APP_OPEN),
 		interstitial = pick("ads.interstitial_unit", M.TEST_INTERSTITIAL),
+		banner = pick("ads.banner_unit", M.TEST_BANNER),
 	}
 end
 
 local save, opts
-local started = false
+local started, initialized = false, false
+
+-- The reader's banner: shown only while reading, below the text, never over
+-- it. The reader listens for its height to keep that space free.
+local banner = { wanted = false, loaded = false, loading = false, height = 0 }
+local banner_listener
+
+local function banner_changed()
+	if banner_listener then
+		banner_listener(banner.wanted and banner.loaded and banner.height or 0)
+	end
+end
+
+local function load_banner()
+	if not banner.loading and not banner.loaded then
+		banner.loading = true
+		-- the standard 320 x 50 size: small and steady
+		admob.load_banner(opts.banner_unit, admob.SIZE_BANNER)
+	end
+end
 local today_fn = function()
 	return require("core.day").today()
 end
@@ -82,6 +104,10 @@ end
 
 local function on_admob(self, message_id, message)
 	if message_id == admob.MSG_INITIALIZATION then
+		initialized = true
+		if banner.wanted and opts.banner and not M.removed() then
+			load_banner()
+		end
 		if opts.app_open and M.should_show_app_open(state(), today_fn(), M.removed()) then
 			admob.load_appopen(opts.app_open_unit)
 		end
@@ -94,6 +120,19 @@ local function on_admob(self, message_id, message)
 			admob.show_appopen()
 		elseif message.event == admob.EVENT_OPENING then
 			mark("last_app_open_day")
+		end
+	elseif message_id == admob.MSG_BANNER then
+		if message.event == admob.EVENT_LOADED then
+			banner.loading, banner.loaded = false, true
+			banner.height = message.height or 0
+			if banner.wanted and not M.removed() then
+				admob.show_banner(admob.POS_BOTTOM_CENTER)
+			else
+				admob.hide_banner()
+			end
+			banner_changed()
+		elseif message.event == admob.EVENT_FAILED_TO_LOAD then
+			banner.loading = false
 		end
 	elseif message_id == admob.MSG_INTERSTITIAL then
 		if message.event == admob.EVENT_OPENING then
@@ -109,9 +148,10 @@ function M.init(save_data, options)
 	local units = M.units(sys.get_engine_info().is_debug, function(key)
 		return sys.get_config_string(key, "")
 	end)
-	opts.app_open_unit, opts.interstitial_unit = units.app_open, units.interstitial
+	opts.app_open_unit, opts.interstitial_unit, opts.banner_unit = units.app_open, units.interstitial, units.banner
 	if opts.app_open == nil then opts.app_open = true end
 	if opts.interstitial == nil then opts.interstitial = true end
+	if opts.banner == nil then opts.banner = true end
 	if not admob or M.removed() then
 		return false
 	end
@@ -185,6 +225,43 @@ function M.on_game_start()
 		return true
 	end
 	return false
+end
+
+--- The reader's banner. show_banner() while the text is on screen,
+--- hide_banner() when leaving it. The listener gets the banner's height in
+--- screen pixels (0 when none shows), to keep that space free of text.
+function M.set_banner_listener(fn)
+	banner_listener = fn
+end
+
+function M.show_banner()
+	banner.wanted = true
+	if not admob or not opts or not opts.banner or M.removed() or not initialized then
+		return -- loaded once AdMob has started, if still wanted
+	end
+	if banner.loaded then
+		admob.show_banner(admob.POS_BOTTOM_CENTER)
+		banner_changed()
+	else
+		load_banner()
+	end
+end
+
+function M.hide_banner()
+	banner.wanted = false
+	if admob and banner.loaded then
+		admob.hide_banner()
+	end
+	banner_changed()
+end
+
+--- After "Remove ads": take away anything on screen at once.
+function M.remove_all()
+	if admob and banner.loaded then
+		admob.destroy_banner()
+	end
+	banner.loaded, banner.loading = false, false
+	banner_changed()
 end
 
 --- For tests: replace how "today" is found.

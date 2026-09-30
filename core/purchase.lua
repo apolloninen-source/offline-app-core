@@ -18,6 +18,11 @@ local function grant()
 	if save.values.ads_removed ~= true then
 		save.values.ads_removed = true
 		save:write()
+		-- a banner may be on screen right now
+		local ads = package.loaded["core.ads"]
+		if ads and ads.remove_all then
+			ads.remove_all()
+		end
 	end
 end
 

@@ -36,6 +36,7 @@ local save_mod = require "core.save"
 local bookmarks = require "core.bookmarks"
 local note_editor = require "core.ui.note_editor"
 local notes_export = require "core.notes_export"
+local ads = require "core.ads"
 
 local TOUCH = hash("mouse_button_left")
 local BACK = hash("key_back")
@@ -90,8 +91,9 @@ local function add(self, str, opts)
 	return item
 end
 
+-- The text area: below the header, above the banner's space (if any).
 local function viewport_h(self)
-	return self.height - HEADER_H
+	return self.height - HEADER_H - (self.bottom or 0)
 end
 
 local function max_scroll(self)
@@ -111,10 +113,57 @@ local function cull(self)
 	end
 end
 
+-- "Top": shown once the page has scrolled more than a screen.
+local function update_top_button(self)
+	if self.top_btn then
+		local show_it = self.scroll > viewport_h(self) and not self.notes_panel
+		gui.set_enabled(self.top_btn, show_it)
+		self.top_shown = show_it
+	end
+end
+
 local function set_scroll(self, value)
 	self.scroll = math.max(0, math.min(max_scroll(self), value))
 	gui.set_position(self.content, vmath.vector3(0, self.height - HEADER_H + self.scroll, 0))
 	cull(self)
+	update_top_button(self)
+end
+
+-- Keeps the bottom free for the banner: an opaque band the text scrolls
+-- under, exactly as high as the banner.
+local function set_bottom(self, units)
+	self.bottom = units
+	gui.set_size(self.bottom_bg, vmath.vector3(self.width, units, 0))
+	gui.set_position(self.bottom_bg, vmath.vector3(self.width / 2, units / 2, 0))
+	gui.set_enabled(self.bottom_bg, units > 0)
+	if self.content then
+		set_scroll(self, self.scroll)
+	end
+end
+
+-- The banner's height in screen pixels -> GUI units. The 720 x 1280 layout
+-- is fitted into the window and centred, so any bar below it counts.
+local function pixels_to_units(self, px)
+	if px <= 0 then
+		return 0
+	end
+	local w, h = window.get_size()
+	local scale = math.min(w / self.width, h / self.height)
+	local bar = (h - self.height * scale) / 2
+	return math.max(0, px - bar) / scale + 4
+end
+
+-- The banner shows only while the text of a section is on screen.
+local function update_banner(self)
+	local on = self.visible and self.view == "section"
+	if on then
+		ads.show_banner()
+	else
+		ads.hide_banner()
+	end
+	if self.test_banner_px then
+		set_bottom(self, on and pixels_to_units(self, self.test_banner_px) or 0)
+	end
 end
 
 local function clear(self)
@@ -129,6 +178,7 @@ local function clear(self)
 	self.cursor = 24
 	self.scroll = 0
 	set_scroll(self, 0)
+	update_banner(self) -- every view starts here, after setting self.view
 end
 
 local function set_header(self, back_label, title, action_label)
@@ -139,7 +189,7 @@ local function set_header(self, back_label, title, action_label)
 	-- Long titles shrink to fit on one line.
 	gui.set_scale(self.title, vmath.vector3(1, 1, 1))
 	local w = measure(self, "title", title, 0, 1, false).width
-	local room = self.width - 2 * MARGIN
+	local room = self.width - 2 * MARGIN - 84 -- the Top button's place
 	if w > room then
 		local s = room / w
 		gui.set_scale(self.title, vmath.vector3(s, s, 1))
@@ -266,6 +316,7 @@ show_section = function(self, part_n, section_n, chunk)
 	local target = chunk and self.chunks[chunk]
 	set_scroll(self, target and (-target.top - 16) or 0)
 	remember(self)
+	update_banner(self)
 end
 
 -- A part's sections, grouped by sub-part. When the part has several
@@ -304,6 +355,7 @@ show_part = function(self, part_n, focus)
 			on_tap = function() show_section(self, part_n, i) end })
 	end
 	set_scroll(self, focus and rows[focus] and (-rows[focus].top - viewport_h(self) / 3) or 0)
+	update_banner(self)
 end
 
 show_contents = function(self)
@@ -454,6 +506,7 @@ local function show(self)
 		gui.set_enabled(self.root, true)
 		msg.post(".", "acquire_input_focus")
 	end
+	update_banner(self)
 end
 
 local function hide(self)
@@ -464,6 +517,7 @@ local function hide(self)
 		gui.set_enabled(self.root, false)
 		msg.post(".", "release_input_focus")
 	end
+	update_banner(self)
 end
 
 local function close(self)
@@ -536,6 +590,36 @@ function init(self)
 	gui.set_color(self.title, self.colors.ink)
 	gui.set_parent(self.title, self.root)
 
+	self.bottom_bg = gui.new_box_node(vmath.vector3(self.width / 2, 0, 0), vmath.vector3(self.width, 0, 0))
+	gui.set_color(self.bottom_bg, self.colors.background)
+	gui.set_parent(self.bottom_bg, self.root)
+	gui.set_enabled(self.bottom_bg, false)
+
+	-- "Top": a small round button with a chevron (two short bars)
+	-- in the header, beside the title, so it never covers the text
+	self.top_btn = gui.new_pie_node(vmath.vector3(self.width - MARGIN - 34, self.height - 112, 0),
+		vmath.vector3(68, 68, 0))
+	gui.set_outer_bounds(self.top_btn, gui.PIEBOUNDS_ELLIPSE)
+	gui.set_perimeter_vertices(self.top_btn, 48)
+	gui.set_color(self.top_btn, self.colors.accent)
+	gui.set_parent(self.top_btn, self.root)
+	for side = -1, 1, 2 do
+		local bar = gui.new_box_node(vmath.vector3(side * 9, 3, 0), vmath.vector3(26, 5, 0))
+		gui.set_rotation(bar, vmath.vector3(0, 0, -side * 40))
+		gui.set_color(bar, self.colors.background)
+		gui.set_parent(bar, self.top_btn)
+	end
+	self.bottom = 0
+	set_bottom(self, 0)
+	ads.set_banner_listener(function(px)
+		set_bottom(self, pixels_to_units(self, px))
+	end)
+	-- Desktop test of the layout: pretend a banner of this many pixels shows.
+	local test_px = sys.get_config_int("reader.test_banner_px", 0)
+	if test_px > 0 then
+		self.test_banner_px = test_px
+	end
+
 	self.book = reader.open(sys.get_config_string("reader.book_dir", "/shared/reader/data/"))
 	show_contents(self)
 	self.visible = false
@@ -562,6 +646,16 @@ local function tap(self, x, y)
 	if self.notes_panel then
 		close_notes(self)
 		return
+	end
+	if self.top_shown then
+		local p = gui.get_position(self.top_btn)
+		if math.abs(x - p.x) < 50 and math.abs(y - p.y) < 50 then
+			set_scroll(self, 0)
+			return
+		end
+	end
+	if y < (self.bottom or 0) then
+		return -- the banner's space
 	end
 	if y > self.height - HEADER_H then
 		if self.back_enabled and y > self.height - 90 and x < self.width / 2 then
