@@ -44,6 +44,7 @@ local note_editor = require "core.ui.note_editor"
 local notes_export = require "core.notes_export"
 local ads = require "core.ads"
 local share = require "core.share"
+local search = require "core.search"
 
 local TOUCH = hash("mouse_button_left")
 local BACK = hash("key_back")
@@ -254,7 +255,7 @@ end
 
 -- Views ----------------------------------------------------------------------
 
-local show_contents, show_part, show_section, show_marks
+local show_contents, show_part, show_section, show_marks, show_search
 
 -- Where reading stands: the first paragraph (chunk) with a real part of it
 -- still on screen (not just its last line).
@@ -359,7 +360,8 @@ show_section = function(self, part_n, section_n, chunk)
 	local section = part.sections[section_n]
 	self.view, self.part_n, self.section_n = "section", part_n, section_n
 	clear(self)
-	set_header(self, part.name, "Section " .. section.label, "Bookmark")
+	local back = ({ search = "Search", marks = "Marks" })[self.return_view] or part.name
+	set_header(self, back, "Section " .. section.label, "Bookmark")
 	local st = self.store.values
 	if not st.highlight_tip_seen then
 		add(self, "Tip: press and hold a paragraph to highlight sentences.", { color = self.colors.muted,
@@ -435,6 +437,7 @@ show_part = function(self, part_n, focus)
 	close_notes(self)
 	local part = self.book:part(part_n)
 	self.view, self.part_n = "part", part_n
+	self.return_view = nil
 	clear(self)
 	set_header(self, "Contents", part.name)
 	local subs, seen = {}, {}
@@ -471,6 +474,7 @@ show_contents = function(self)
 	close_notes(self)
 	local index = self.book:index()
 	self.view = "contents"
+	self.return_view = nil
 	clear(self)
 	set_header(self, self.owner and "Back" or nil, index.title or "")
 	if index.translator then
@@ -491,9 +495,9 @@ show_contents = function(self)
 		add(self, string.format("Bookmarks & highlights (%d) ›", #st.marks), { color = self.colors.accent,
 			space_after = 14, on_tap = function() show_marks(self) end })
 	end
-	if last or (st.marks and #st.marks > 0) then
-		add(self, "", { space_after = 8 })
-	end
+	add(self, "Search the text ›", { color = self.colors.accent, space_after = 14,
+		on_tap = function() show_search(self) end })
+	add(self, "", { space_after = 8 })
 	for n, entry in ipairs(index.parts) do
 		local open_part = function() show_part(self, n) end
 		add(self, string.format("%d   %s", entry.number or n, entry.name), {
@@ -547,7 +551,10 @@ show_marks = function(self, status)
 	end
 	local title = self.book:index().title
 	for _, m in ipairs(list) do
-		local open = function() show_section(self, m.part, m.section, m.chunk) end
+		local open = function()
+			self.return_view = "marks"
+			show_section(self, m.part, m.section, m.chunk)
+		end
 		local is_highlight = bookmarks.kind(m) == "highlight"
 		add(self, (is_highlight and "" or "Bookmark · ") .. (m.place or place_of(self, m.part, m.section)),
 			{ color = self.colors.accent, scale = 0.8, space_after = 8, on_tap = open })
@@ -622,6 +629,89 @@ local function close_editor(self, keep)
 		self.store:write()
 	end
 	redraw(self)
+end
+
+-- Searching the text -----------------------------------------------------------
+
+local function open_search_editor(self)
+	close_notes(self)
+	self.search_editing = true
+	self.editor = note_editor.open({
+		width = self.width, height = self.height, header = HEADER_H, parent = self.root,
+		title = "Search", prompt = "A word or a phrase: dharma, Karna, the dice…",
+		text = self.search_query or "", max = 80,
+		colors = { panel = self.colors.background, field = self.colors.field, ink = self.colors.ink,
+			muted = self.colors.muted, accent = self.colors.accent },
+	})
+end
+
+-- Every place the words appear, one Parva per frame (see update()).
+show_search = function(self)
+	close_notes(self)
+	self.view = "search"
+	clear(self)
+	set_header(self, "Contents", "Search")
+	local run = self.search
+	add(self, self.search_query and ("“" .. self.search_query .. "”   · change") or "Tap here to search the text ›",
+		{ color = self.colors.accent, space_after = 12, on_tap = function() open_search_editor(self) end })
+	local status
+	if not run then
+		status = "Find every place a word or phrase appears in the whole text."
+	elseif not run.done then
+		status = "Searching…"
+	elseif #run.results == 0 then
+		status = "Not found."
+	elseif run.full then
+		status = string.format("The first %d places, in book order.", #run.results)
+	else
+		status = string.format("%d place%s, in book order.", #run.results, #run.results == 1 and "" or "s")
+	end
+	self.search_status = add(self, status, { color = self.colors.muted, scale = 0.85, space_after = GAP + 6 })
+	if run and run.done then
+		for _, r in ipairs(run.results) do
+			local open = function()
+				self.return_view = "search"
+				self.search_scroll = self.scroll
+				show_section(self, r.part, r.section, r.chunk)
+			end
+			add(self, place_of(self, r.part, r.section), { color = self.colors.accent, scale = 0.8,
+				space_after = 6, on_tap = open })
+			add(self, r.snippet, { scale = 0.9, space_after = GAP + 6, on_tap = open })
+		end
+		if self.search_scroll then
+			set_scroll(self, self.search_scroll)
+		end
+	end
+end
+
+local function start_search(self, query)
+	self.search_query = query
+	self.search_scroll = nil
+	local q = search.normalize(query)
+	self.search = q and { q = q, part = 1, results = {}, done = false } or nil
+	show_search(self)
+	if not q then
+		open_search_editor(self)
+	end
+end
+
+-- One Parva per frame, so the screen stays alive on cheap phones.
+local function search_step(self)
+	local run = self.search
+	local parts = self.book:index().parts
+	if run.part > #parts then
+		run.done = true
+	else
+		run.full = search.in_part(self.book:part(run.part), run.part, run.q, run.results)
+		run.part = run.part + 1
+		run.done = run.full or run.part > #parts
+	end
+	if run.done then
+		show_search(self)
+	elseif self.search_status then
+		gui.set_text(self.search_status.node, string.format("Searching %s…   %d found",
+			parts[run.part].name, #run.results))
+	end
 end
 
 -- Choosing sentences to highlight ---------------------------------------------
@@ -814,9 +904,13 @@ local function go_back(self)
 		close_picker(self)
 	elseif self.notes_panel then
 		close_notes(self)
+	elseif self.view == "section" and self.return_view == "search" then
+		show_search(self)
+	elseif self.view == "section" and self.return_view == "marks" then
+		show_marks(self)
 	elseif self.view == "section" then
 		show_part(self, self.part_n, self.section_n)
-	elseif self.view == "part" or self.view == "marks" then
+	elseif self.view == "part" or self.view == "marks" or self.view == "search" then
 		show_contents(self)
 	elseif self.owner then
 		close(self)
@@ -990,7 +1084,16 @@ function on_input(self, action_id, action)
 	end
 	if self.editor then
 		local result = note_editor.on_input(self.editor, action_id, action)
-		if result then
+		if result and self.search_editing then
+			local query = note_editor.value(self.editor):gsub("\n", " ")
+			note_editor.close(self.editor)
+			self.editor, self.search_editing = nil, false
+			if result == "done" then
+				start_search(self, query)
+			else
+				show_search(self)
+			end
+		elseif result then
 			close_editor(self, result == "done")
 		end
 		return true
@@ -1043,6 +1146,9 @@ end
 function update(self, dt)
 	if self.editor then
 		note_editor.update(self.editor, dt)
+	end
+	if self.search and not self.search.done and self.view == "search" and not self.editor then
+		search_step(self)
 	end
 	local d = self.drag
 	if d and not d.done and d.moved < TAP_SLOP then

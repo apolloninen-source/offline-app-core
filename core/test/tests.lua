@@ -17,6 +17,7 @@ local note_editor = require "core.ui.note_editor"
 local bookmarks = require "core.bookmarks"
 local notes_export = require "core.notes_export"
 local backup = require "core.backup"
+local search = require "core.search"
 
 local M = {}
 
@@ -325,6 +326,33 @@ local function test_backup()
 	check("backup refuses other files", backup.decode("hello", app) == nil and backup.decode("{\"a\":1}", app) == nil)
 end
 
+local function test_search()
+	check("normalize", search.normalize("  The   Dice ") == "the dice" and search.normalize("a") == nil)
+	local s = "Day after day countless creatures are going to the abode of Yama, yet those that remain behind believe themselves to be immortal."
+	local pos = s:lower():find("yama", 1, true)
+	local snip = search.snippet(s, pos, 4, 20, 20)
+	check("snippet around the match", snip:find("Yama", 1, true) ~= nil and snip:sub(1, 3) == "…" and snip:sub(-3) == "…", snip)
+	check("snippet of a short text is whole", search.snippet("Om tat sat.", 4, 3) == "Om tat sat.")
+	local long = string.rep("word ", 200) .. "needle here."
+	local paras = { "First paragraph.", long }
+	local body = long
+	local npos = body:find("needle", 1, true)
+	local k = search.chunk_of(paras, 2, npos)
+	local pieces = text.chunks(long, 700)
+	check("chunk of a match", k == 1 + #pieces and pieces[#pieces]:find("needle", 1, true) ~= nil, k)
+	local part = { sections = {
+		{ paras = { "Nothing here.", "The dice[^4] were cast." } },
+		{ paras = { "Dice again, and DICE." } },
+	} }
+	local results = {}
+	search.in_part(part, 2, "dice", results)
+	check("one result per paragraph", #results == 2 and results[1].section == 1 and results[2].section == 2
+		and results[1].part == 2 and results[1].chunk == 2)
+	check("markers left out of snippets", not results[1].snippet:find("%[%^"))
+	local capped = {}
+	check("limit", search.in_part(part, 2, "dice", capped, 1) == true and #capped == 1)
+end
+
 function M.run()
 	failures, passed = 0, 0
 	test_rng()
@@ -341,6 +369,7 @@ function M.run()
 	test_notes_export()
 	test_highlights()
 	test_backup()
+	test_search()
 	print(string.format("core tests: %d passed, %d failed", passed, failures))
 	return failures
 end
