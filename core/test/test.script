@@ -1,0 +1,9 @@
+-- Runs the core tests. With core.selftest=1 the engine exits with the
+-- number of failures as its exit code, for use in scripts.
+
+function init(self)
+	local failures = require("core.test.tests").run()
+	if sys.get_config_int("core.selftest", 0) == 1 then
+		sys.exit(failures)
+	end
+end

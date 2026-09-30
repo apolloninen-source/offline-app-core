@@ -1,0 +1,10 @@
+name: "reader"
+scale_along_z: 0
+embedded_instances {
+  id: "reader"
+  data: "components {\n"
+  "  id: \"gui\"\n"
+  "  component: \"/core/reader_ui/reader.gui\"\n"
+  "}\n"
+  ""
+}

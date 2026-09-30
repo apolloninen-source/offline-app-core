@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{{android.package}}">
+    <uses-sdk android:minSdkVersion="{{android.minimum_sdk_version}}" android:targetSdkVersion="{{android.target_sdk_version}}" />
+    <application>
+        <!-- offline-app-core "files": an invisible screen that opens the system
+             file picker for "Restore from a backup file" -->
+        <activity
+            android:name="offlineappcore.files.PickActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout|uiMode"
+            android:exported="false" />
+    </application>
+</manifest>
