@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Defold 1.13.0's builtin Android manifest (builtins/manifests/android/
+     AndroidManifest.xml in bob.jar), with the tracking permissions of the
+     ads SDK removed. Use it from an app's game.project:
+       [android]
+       manifest = /core/android/AndroidManifest.xml
+     When upgrading Defold, copy the new builtin manifest and keep the
+     block marked offline-app-core. -->
+<!-- BEGIN_INCLUDE(manifest) -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:tools="http://schemas.android.com/tools"
+        package="{{android.package}}"
+        android:versionCode="{{android.version_code}}"
+        android:versionName="{{project.version}}"
+        android:appCategory="game"
+        android:installLocation="auto">
+
+    {{#shader.exclude_gles_sm100}}
+    <uses-feature android:required="true" android:glEsVersion="0x00030000" />
+    {{/shader.exclude_gles_sm100}}
+    {{^shader.exclude_gles_sm100}}
+    <uses-feature android:required="true" android:glEsVersion="0x00020000" />
+    {{/shader.exclude_gles_sm100}}
+    <uses-sdk android:minSdkVersion="{{android.minimum_sdk_version}}" android:targetSdkVersion="{{android.target_sdk_version}}" />
+
+    <!-- offline-app-core: ads are never personalized and nothing tracks the
+         player. The ads SDK asks for these; they are removed here. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_AD_ID" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_TOPICS" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION" tools:node="remove" />
+
+    <!-- offline-app-core: "Share on WhatsApp" opens whatsapp:// links; Android 11+
+         only lets an app see the apps it declares here. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
+    </queries>
+    <!-- offline-app-core: allowBackup keeps Android's own backup of the app's
+         data (marks, notes, progress) to the player's Google account, if they
+         have backup on; it comes back on a new phone or after a reinstall. -->
+    <application
+        android:allowBackup="true"
+        {{#has-icons?}}
+        android:icon="@drawable/icon"
+        {{/has-icons?}}
+        android:extractNativeLibs="{{android.extract_native_libs}}"
+        android:label="{{project.title}}" android:hasCode="true"
+        android:name="android.app.Application"
+        android:enableOnBackInvokedCallback="true"
+        android:debuggable="{{android.debuggable}}">
+
+        <meta-data android:name="android.max_aspect" android:value="2.1" />
+        <meta-data android:name="android.notch_support" android:value="true"/>
+        <meta-data android:name="com.defold.vkquality.enabled" android:value="{{defold.vkquality.enabled}}"/>
+
+        <activity android:name="com.dynamo.android.DefoldActivity"
+                android:label="{{project.title}}"
+                android:configChanges="fontScale|keyboard|keyboardHidden|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
+                android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+                android:screenOrientation="{{orientation-support}}"
+                android:exported="true"
+                android:launchMode="singleTask">
+            <meta-data android:name="android.app.lib_name"
+                    android:value="{{exe-name}}" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+</manifest>
+<!-- END_INCLUDE(manifest) -->

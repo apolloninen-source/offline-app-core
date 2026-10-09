@@ -1,0 +1,14 @@
+name: "main"
+scale_along_z: 0
+collection_instances {
+  id: "reader"
+  collection: "/core/reader_ui/reader.collection"
+}
+embedded_instances {
+  id: "<app>"
+  data: "components {\n"
+  "  id: \"gui\"\n"
+  "  component: \"/apps/<app>/<app>.gui\"\n"
+  "}\n"
+  ""
+}

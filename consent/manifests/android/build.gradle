@@ -1,0 +1,10 @@
+repositories {
+  mavenCentral()
+  google()
+}
+
+dependencies {
+  // Google's User Messaging Platform: the certified consent form for the
+  // EEA, UK and Switzerland, configured in AdMob under Privacy & messaging.
+  implementation "com.google.android.ump:user-messaging-platform:3.1.0"
+}

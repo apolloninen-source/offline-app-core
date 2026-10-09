@@ -1,0 +1,2 @@
+# Native code loads the bridge class and its methods by name through JNI.
+-keep,allowoptimization class offlineappcore.consent.** { *; }

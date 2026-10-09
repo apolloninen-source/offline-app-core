@@ -1,0 +1,59 @@
+; Settings every app of the three series shares. Copy into the app's
+; game.project (or its app.settings) and fill in the <...> parts.
+; The ; lines are notes: remove them, game.project has no comments.
+
+[project]
+title = <App name>
+custom_resources = <the book's JSON folder, e.g. /shared/reader/data>,<the app's own data folder>
+dependencies#0 = https://github.com/apolloninen-source/offline-app-core/archive/<commit>.zip
+dependencies#1 = https://github.com/defold/extension-admob/archive/refs/tags/4.2.2.zip
+dependencies#2 = https://github.com/defold/extension-iap/archive/refs/tags/8.4.1.zip
+dependencies#3 = https://github.com/britzl/defold-sharing/archive/refs/tags/4.7.0.zip
+bundle_resources = /apps/<app>/bundle
+
+[bootstrap]
+main_collection = /apps/<app>/main.collectionc
+
+[input]
+game_binding = /builtins/input/all.input_bindingc
+
+[display]
+width = 720
+height = 1280
+high_dpi = 1
+
+[graphics]
+default_texture_min_filter = linear
+default_texture_mag_filter = linear
+
+[android]
+package = com.<series>.<app>
+minimum_sdk_version = 26
+manifest = /core/android/AndroidManifest.xml
+app_icon_36x36 = /apps/<app>/icons/icon_36.png
+app_icon_48x48 = /apps/<app>/icons/icon_48.png
+app_icon_72x72 = /apps/<app>/icons/icon_72.png
+app_icon_96x96 = /apps/<app>/icons/icon_96.png
+app_icon_144x144 = /apps/<app>/icons/icon_144.png
+app_icon_192x192 = /apps/<app>/icons/icon_192.png
+
+[admob]
+app_id_android = <the app's AdMob app ID, ca-app-pub-…~…>
+test_ads_in_debug = 1
+
+[ads]
+app_open_unit = <ca-app-pub-…/…>
+interstitial_unit = <ca-app-pub-…/…, or leave out if the app has none>
+banner_unit = <ca-app-pub-…/…, the reader's banner>
+
+[iap]
+auto_finish_transactions = 0
+
+[reader]
+book_dir = <the book's JSON folder, ending in />
+start_hidden = 1
+save_id = <app>
+background = <colours of the series, hex>
+ink = <…>
+accent = <…>
+muted = <…>

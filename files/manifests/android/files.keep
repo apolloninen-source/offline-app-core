@@ -1,0 +1,2 @@
+# Native code loads these classes and methods by name through JNI.
+-keep,allowoptimization class offlineappcore.files.** { *; }

@@ -1,0 +1,7 @@
+/.internal
+/build
+/bundle
+/.editor_settings
+debug.keystore
+debug.keystore.pass.txt
+__pycache__/
