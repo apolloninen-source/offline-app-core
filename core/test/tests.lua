@@ -327,6 +327,30 @@ local function test_backup()
 	check("backup refuses other files", backup.decode("hello", app) == nil and backup.decode("{\"a\":1}", app) == nil)
 end
 
+local function test_backup_set()
+	local parts = { { app = "oac-set", names = { "save", "reader" } }, { app = "oac-game", names = { "save" } } }
+	sys.save(sys.get_save_file("oac-set", "save"), { ads_removed = true })
+	sys.save(sys.get_save_file("oac-set", "reader"), { marks = { { note = "N" } } })
+	sys.save(sys.get_save_file("oac-game", "save"), { readings = { a = "ॐ shanti" } })
+	local text = json.encode(backup.collect_set("oac-set", parts))
+	for _, p in ipairs({ { "oac-set", "save" }, { "oac-set", "reader" }, { "oac-game", "save" } }) do
+		sys.save(sys.get_save_file(p[1], p[2]), {})
+	end
+	local ok = backup.restore_set("oac-set", parts, text, "oac-set")
+	check("set backup restores every part", ok and sys.load(sys.get_save_file("oac-set", "save")).ads_removed == true
+		and sys.load(sys.get_save_file("oac-set", "reader")).marks[1].note == "N"
+		and sys.load(sys.get_save_file("oac-game", "save")).readings.a == "ॐ shanti")
+	-- a game's own old backup: its save to the game, its reader marks to the set's reader
+	local old = json.encode({ format = backup.FORMAT, version = 1, app = "oac-game", date = "2026-09-30",
+		files = { save = { readings = { b = "old" } }, reader = { marks = { { note = "old mark" } } } } })
+	local ok2, date = backup.restore_set("oac-set", parts, old, "oac-set")
+	check("an old game backup restores into the set", ok2 and date == "2026-09-30"
+		and sys.load(sys.get_save_file("oac-game", "save")).readings.b == "old"
+		and sys.load(sys.get_save_file("oac-set", "reader")).marks[1].note == "old mark")
+	check("set refuses strangers", select(2, backup.restore_set("oac-set", parts,
+		json.encode({ format = backup.FORMAT, version = 1, app = "elsewhere", files = {} }), "oac-set")) ~= nil)
+end
+
 local function test_search()
 	check("normalize", search.normalize("  The   Dice ") == "the dice" and search.normalize("a") == nil)
 	local s = "Day after day countless creatures are going to the abode of Yama, yet those that remain behind believe themselves to be immortal."
@@ -401,6 +425,7 @@ function M.run()
 	test_notes_export()
 	test_highlights()
 	test_backup()
+	test_backup_set()
 	test_search()
 	test_codes()
 	print(string.format("core tests: %d passed, %d failed", passed, failures))

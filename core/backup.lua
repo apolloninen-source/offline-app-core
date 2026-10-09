@@ -70,4 +70,75 @@ function M.export(app_id, names)
 	return notes_export.export(app_id, file, json.encode(M.collect(app_id, names)))
 end
 
+-- Several apps in one ------------------------------------------------------------
+--
+-- An app that holds several games keeps each game's saves under the game's
+-- own id, and backs them up together as one file:
+--
+--   local PARTS = { { app = "dharma", names = { "save", "reader" } },
+--                   { app = "yaksha", names = { "save" } }, ... }
+--   backup.export_set("dharma", PARTS)
+--   backup.restore_set("dharma", PARTS, text, "dharma")
+--
+-- restore_set also takes a backup that one of the games made on its own,
+-- before it joined the set, so no player's old backup file is lost.
+
+--- Everything in the parts' save files, as one table.
+function M.collect_set(id, parts)
+	local apps = {}
+	for _, p in ipairs(parts) do
+		local files = {}
+		for _, name in ipairs(p.names) do
+			files[name] = sys.load(sys.get_save_file(p.app, name))
+		end
+		apps[p.app] = files
+	end
+	return { format = M.FORMAT, version = M.VERSION, app = id, date = notes_export.date(), apps = apps }
+end
+
+--- Saves a backup file of all the parts and opens the share sheet with it.
+function M.export_set(id, parts)
+	local file = id .. "-backup-" .. notes_export.date() .. ".json"
+	return notes_export.export(id, file, json.encode(M.collect_set(id, parts)))
+end
+
+--- Restores a backup of the set, or of one app in it. `reader` is the app
+--- whose "reader" file holds the reader's marks in the set (a game's own
+--- backup kept them under the game's id). Returns true and the backup's
+--- date, or nil and a message for the player.
+function M.restore_set(id, parts, text, reader)
+	local ok, t = pcall(json.decode, text or "")
+	if not ok or type(t) ~= "table" or t.format ~= M.FORMAT then
+		return nil, "This is not a backup file from these apps."
+	end
+	if (t.version or 0) > M.VERSION then
+		return nil, "This backup file is from a newer version of the app."
+	end
+	local known = {}
+	for _, p in ipairs(parts) do
+		known[p.app] = true
+	end
+	local function put(app, name, values)
+		if type(values) == "table" then
+			sys.save(sys.get_save_file(app, name), values)
+		end
+	end
+	if t.app == id and type(t.apps) == "table" then
+		for app, files in pairs(t.apps) do
+			if known[app] and type(files) == "table" then
+				for name, values in pairs(files) do
+					put(app, name, values)
+				end
+			end
+		end
+		return true, t.date
+	elseif known[t.app] and type(t.files) == "table" then
+		for name, values in pairs(t.files) do
+			put(name == "reader" and reader or t.app, name, values)
+		end
+		return true, t.date
+	end
+	return nil, "This backup belongs to another app (" .. tostring(t.app) .. ")."
+end
+
 return M
